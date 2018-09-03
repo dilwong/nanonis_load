@@ -1,0 +1,30 @@
+A library of routines for importing Nanonis SPM data files into a Python 2.7 environment.  The data can then be plotted and analyzed.
+
+The following file types are supported:
+*.dat Bias Spectroscopy files read by get_spectra(FILENAME) in "didv.py"
+*.3ds Grid Spectroscopy files read by load_nanonis_3ds(FILENAME) in "grid.py"
+*.sxm Image files read by load_sxm(FILENAME) in "sxm.py"
+
+
+plot_spectra() in "didv.py" plots .dat bias spectroscopy files.
+plot_nanonis_3ds() in "grid.py" plots .3ds grid spectroscopy files.
+plot_sxm() in "sxm.py" plots .sxm image files.
+
+====================================================================================
+
+Copyright (c) 2014 - 2018 Dillon Wong
+This is free software that can be distributed and/or modified as per GPLv3.  Use of this software is done so without warranty or liability.
+
+====================================================================================
+
+These routines use code from the following sources:
+*Thoth by François Bianco, University of Geneva (GPLv3)
+*IvS Python Workshop, KU Leuven (CC Attribution 3.0)
+*Matplotlib
+Please see Licenses for more information.
+
+====================================================================================
+
+The naming convention for files is chosen to resemble that of a set of MATLAB programs written in Mike Crommie's lab for importing Omicron Scala data files into a MATLAB environment.
+
+====================================================================================
