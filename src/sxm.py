@@ -90,6 +90,7 @@ class plot():
         y, x = np.mgrid[0:x_range:x_pixels*1j,0:y_range:y_pixels*1j]
         self.pcolor = self.ax.pcolormesh(x, y, image_data, cmap = 'copper')
         self.fig.colorbar(self.pcolor, ax = self.ax)
+        self.image_data = image_data
 
     def xlim(self, x_min, x_max):
         self.ax.set_xlim(x_min, x_max)
@@ -119,3 +120,21 @@ class plot():
             y = spectrum_to_center[1] + self.data.header['y_range (nm)']/2
             self.ax.scatter(x, y, marker='x', color='red')
             self.ax.text(x, y, label_inst, fontsize = 10)
+    
+    def fft(self):
+        self.fft_fig = plt.figure()
+        self.fft_ax = self.fft_fig.add_subplot(111)
+        fft_array = np.absolute(np.fft.fft2(self.image_data))
+        max_fft = np.max(fft_array[1:-1,1:-1])
+        fft_array = np.fft.fftshift(fft_array)
+        fft_x = -np.pi/self.data.header['x_range (nm)']
+        fft_y = np.pi/self.data.header['y_range (nm)']
+        self.fft_plot = self.fft_ax.imshow(fft_array, extent=[fft_x, -fft_x, -fft_y, fft_y],origin='lower')
+        self.fft_fig.colorbar(self.fft_plot, ax = self.fft_ax)
+        self.fft_clim(0,max_fft)
+
+    def fft_clim(self, c_min, c_max):
+        self.fft_plot.set_clim(c_min, c_max)
+
+    def fft_colormap(self, cmap):
+        self.fft_plot.set_cmap(cmap)

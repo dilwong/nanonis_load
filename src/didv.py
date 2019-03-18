@@ -88,13 +88,20 @@ class plot():
 
 class colorplot():
 
-    def __init__(self, spectra_list, channel, index_range):
+    def __init__(self, spectra_list, channel, index_range = [-1000, 1000]):
 
         self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
         bias = spectra_list[0].data.iloc[:,0].values
-        x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,index_range[0]:index_range[1]:len(spectra_list)*1j]
+        if len(index_range) == 2:
+            x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,index_range[0]:index_range[1]:len(spectra_list)*1j]
+        elif len(index_range) == len(spectra_list):
+            x, y = np.meshgrid(bias, index_range)
+            x = x.T
+            y = y.T
+        else:
+            x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,-1000:1000:len(spectra_list)*1j]
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = 'seismic')
         self.fig.colorbar(self.pcolor, ax = self.ax)
 

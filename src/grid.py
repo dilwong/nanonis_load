@@ -65,10 +65,9 @@ class nanonis_3ds():
 
 #Plot Nanonis 3ds data
 #Key press UP and DOWN to change energy
-#TO DO: Implement Fourier Transform
 class plot():
 
-    def __init__(self, nanonis_3ds, channel):
+    def __init__(self, nanonis_3ds, channel, fft = False):
 
         self.header = nanonis_3ds.header
         self.data = nanonis_3ds.data[channel]
@@ -76,13 +75,27 @@ class plot():
 
         x_size = self.header['x_size (nm)']
         y_size = self.header['x_size (nm)']
-        self.fig = plt.figure()
-        self.ax = self.fig.add_subplot(111)
+        if fft:
+            self.fig = plt.figure(figsize=[2*6.4, 4.8])
+            self.ax = self.fig.add_subplot(121)
+            self.fft_ax = self.fig.add_subplot(122)
+        else:
+            self.fig = plt.figure()
+            self.ax = self.fig.add_subplot(111)
         self.plot = self.ax.imshow(np.flipud(self.data[:,:,0]), extent=[0,x_size,0,y_size], cmap = 'Blues_r')
+        if fft:
+            fft_array = np.absolute(np.fft.fft2(np.flipud(self.data[:,:,0])))
+            max_fft = np.max(fft_array[1:-1,1:-1])
+            fft_array = np.fft.fftshift(fft_array)
+            fft_x = -np.pi/x_size
+            fft_y = np.pi/y_size
+            self.fft_plot = self.fft_ax.imshow(fft_array, extent=[fft_x, -fft_x, -fft_y, fft_y], origin='lower')
+            self.fig.colorbar(self.fft_plot, ax = self.fft_ax)
+            self.fft_clim(0,max_fft)
         self.ax.set_xlabel('X (nm)')
         self.ax.set_ylabel('Y (nm)')
         self.fig.colorbar(self.plot, ax = self.ax)
-        self.free=0
+        self.free = 0
         title = 'Energy = ' + str(self.energy[self.free]) + ' eV'
         self.ax.set_title(title)
 
@@ -100,6 +113,10 @@ class plot():
             elif self.free >= len(self.energy):
                 self.free = 0
             self.plot.set_data(np.flipud(self.data[:,:,self.free]))
+            if fft:
+                fft_array = np.absolute(np.fft.fft2(np.flipud(self.data[:,:,self.free])))
+                fft_array = np.fft.fftshift(fft_array)
+                self.fft_plot.set_data(fft_array)
             title='Energy = ' + str(self.energy[self.free]) + ' eV'
             self.ax.set_title(title)
             self.fig.canvas.draw()
@@ -111,3 +128,9 @@ class plot():
 
     def colormap(self, cmap):
         self.plot.set_cmap(cmap)
+
+    def fft_clim(self, c_min, c_max):
+        self.fft_plot.set_clim(c_min, c_max)
+
+    def fft_colormap(self, cmap):
+        self.fft_plot.set_cmap(cmap)
