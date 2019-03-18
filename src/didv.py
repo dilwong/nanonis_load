@@ -1,153 +1,130 @@
 #Imports Nanonis dI/dV spectroscopy files into Python
 
-import numpy
-import os.path
+import numpy as np
+import pandas as pd
+
 import glob
-import re
 
-import matplotlib
-import matplotlib.pyplot
+import matplotlib.pyplot as plt
 
-import scipy
-import scipy.signal
+#didv.spectra(filename) loads one Nanonis spectrum file (extension .dat) into Python
+class spectrum():
 
-import sxm
+    def __init__(self, filename, attribute = None):
 
-#get_spectra(filename) loads one Nanonis spectrum file (extension .dat) into Python
-class get_spectra():
-
-    def __init__(self,filename):
-
-        self.header = {}
-        self.data = {}
-        
         #Read the header, build the header
-        with open(os.path.normpath(filename),'r') as file_id:
-            file_line=file_id.readline()
-            file_line=file_id.readline().strip()
-            self.header['date']=file_line.split('\t')[1]
-            file_line=file_id.readline()
-            file_line=file_id.readline().strip()
-            self.header['x (nm)']=float(file_line.split('\t')[1])*1e9
-            file_line=file_id.readline().strip()
-            self.header['y (nm)']=float(file_line.split('\t')[1])*1e9
-            file_line=file_id.readline().strip()
-            self.header['z (nm)']=float(file_line.split('\t')[1])*1e9
-            file_line=file_id.readline().strip()
-            self.header['z offset (nm)']=float(file_line.split('\t')[1])*1e9
-            file_line=file_id.readline().strip()
-            self.header['settling time (s)']=float(file_line.split('\t')[1])*1e9
-            file_line=file_id.readline().strip()
-            self.header['integration time (s)']=float(file_line.split('\t')[1])*1e9
-            file_line=file_id.readline()
-            file_line=file_id.readline()
-            file_line=file_id.readline()
-            file_line=file_id.readline()
-            file_line=file_id.readline()
-            file_line=file_id.readline()
-            file_line=file_id.readline()
-            file_line=file_id.readline().strip()
-            self.header['data info']=file_line.split('\t')
+        self.header = {}
+        with open(filename,'r') as file_id:
+            header_lines = 1
+            while True:
+                file_line=file_id.readline().strip()
+                if '[DATA]' in file_line:
+                    break
+                header_lines += 1
+                file_line=file_line.split('\t')
+                if len(file_line) > 1:
+                    self.header[file_line[0]]=file_line[1]
+            if 'X (m)' in self.header:
+                self.header['x (nm)'] = float(self.header['X (m)'])*1e9
+            if 'Y (m)' in self.header:
+                self.header['y (nm)'] = float(self.header['Y (m)'])*1e9
+            if 'Z (m)' in self.header:
+                self.header['z (nm)'] = float(self.header['Z (m)'])*1e9
+            if attribute:
+                self.header['attribute'] = attribute
 
-        #Read data from .dat file into self.data dictionary
-        data_array=numpy.genfromtxt(filename,skip_header=17)
-        for data_title in self.header['data info']:
-            self.data[data_title]=data_array[:,self.header['data info'].index(data_title)]
-            
-        return
+        self.data = pd.read_csv(filename, sep = '\t', header = header_lines, skip_blank_lines = False)
 
-#Function plot_spectra(files) takes a list of filenames (.dat) and plots the spectra
-#Alternatively, if files is an integer, use basename *mxxx_*.dat
-class plot_spectra():
+# Plot a spectrum
+class plot():
 
-    def __init__(self,files,*data_channels):
+    def __init__(self, spectra, channel, names = None, use_attributes = False):
 
-        self.sweeps=[]
-
-        title='Generic Figure'
-        lockin_trig=True
-        current_trig=True
-
-        if type(files) == list:
-            file_list = files
-        elif type(files) == int:
-            file_string = '*m' + '%0*d' % (3, files) + '_*.dat'
-            file_list = glob.glob(file_string)
-            title='m' + '%0*d' % (3, files) + '.sxm'
-            disp=sxm.plot_sxm(files,'Z')
-
-        #Plots dI/dV spectroscopy
-        for filename in file_list:
-            spectrum=get_spectra(filename)
-            self.sweeps.append(spectrum)
-            file_index=file_list.index(filename)
-            if type(files) == int:
-                x_point=spectrum.header['x (nm)'] - disp.header['x_center (nm)'] + disp.header['x_range (nm)']/2.
-                y_point=spectrum.header['y (nm)'] - disp.header['y_center (nm)'] + disp.header['y_range (nm)']/2.
-                disp.plot.text(x_point,y_point,str(file_index+1))
-                disp.figure.canvas.draw()
-            if 'Lock In X (V)' or 'Lock In X [AVG] (V)' in spectrum.header['data info']:
-                if 'Lock In X (V)' in spectrum.header['data info']:
-                    lockin_sweeps=self.sweeps[file_index].data['Lock In X (V)']
+        self.fig = plt.figure()
+        self.ax = self.fig.add_subplot(111)
+        try:
+            spectra_iterator = iter(spectra)
+        except TypeError:
+            spectra_iterator = iter([spectra])
+        for idx, spectrum_inst in enumerate(spectra_iterator):
+            try:
+                if use_attributes:
+                    spectrum_label = str(spectrum_inst.header['attribute'])
                 else:
-                    lockin_sweeps=self.sweeps[file_index].data['Lock In X [AVG] (V)']
-                if lockin_trig:
-                    lockin_figure,lockin_ax=matplotlib.pyplot.subplots()
-                    lockin_trig=False
-                    lockin_lines=[]
-                lockin_tmp=lockin_ax.plot(self.sweeps[file_index].data['Bias calc (V)'],lockin_sweeps,label=str(file_index+1))
-                lockin_lines.append(lockin_tmp[0])
-                lockin_legend=lockin_ax.legend(loc='upper left', fancybox=True, shadow=True)
-                lockin_figure.canvas.draw()
-            if 'Current (A)' or 'Current [AVG] (A)' in spectrum.header['data info']:
-                if 'Current (A)' in spectrum.header['data info']:
-                    current_sweeps=self.sweeps[file_index].data['Current (A)']*1e9
-                else:
-                    current_sweeps=self.sweeps[file_index].data['Current [AVG] (A)']*1e9
-                if current_trig:
-                    current_figure=matplotlib.pyplot.figure()
-                    current_trig=False
-                current_plot=current_figure.add_subplot(111)
-                current_plot.plot(self.sweeps[file_index].data['Bias calc (V)'],current_sweeps,label=str(file_index+1))
-                current_legend=current_plot.legend(loc='upper left', fancybox=True, shadow=True)
-                current_figure.canvas.draw()
-        for channel in data_channels:
-            channel_figure=matplotlib.pyplot.figure()
-            for filename in file_list:
-                spectrum=get_spectra(filename)
-                matplotlib.pyplot.plot(spectrum.data['Bias calc (V)'],spectrum.data[channel])
-            matplotlib.pyplot.xlabel('Sample Bias (V)')
-            matplotlib.pyplot.title(title)
-            matplotlib.pyplot.draw()
+                    spectrum_label = str(names[idx])
+            except (TypeError, IndexError):
+                spectrum_label = str(idx)
+            spectrum_inst.data.plot(x = spectrum_inst.data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label)
+        
+        #Make a legend
+        box = self.ax.get_position()
+        self.ax.set_position([box.x0, box.y0, box.width * 0.9, box.height])
+        self.legend = self.ax.legend(loc = 'center left', bbox_to_anchor=(1, 0.5))
+        plot_lines = self.ax.get_lines()
+        legend_lines = self.legend.get_lines()
+        line_map = dict()
+        for legend_line, plot_line in zip(legend_lines,plot_lines):
+            legend_line.set_picker(5)
+            line_map[legend_line] = plot_line
+        
+        def pick_line(event):
+            legend_line = event.artist
+            plot_line = line_map[legend_line]
+            visibility = not plot_line.get_visible()
+            plot_line.set_visible(visibility)
+            if visibility:
+                legend_line.set_alpha(1)
+            else:
+                legend_line.set_alpha(0.2)
+            self.fig.canvas.draw()
+        
+        self.fig.canvas.mpl_connect('pick_event', pick_line)
 
-        #Adds axis labels
-        if not lockin_trig:
-            lockin_ax.set_xlabel('Sample Bias (V)')
-            lockin_ax.set_ylabel('Unnormalized dI/dV')
-            lockin_ax.set_title(title)
-            lined=dict()
-            #This part comes from
-            #http://matplotlib.org/examples/event_handling/legend_picking.html
-            for legline, origline in zip(lockin_legend.get_lines(),lockin_lines):
-                legline.set_picker(5)
-                lined[legline]=origline
-            def onpick(event):
-                legline=event.artist
-                origline=lined[legline]
-                vis=not origline.get_visible()
-                origline.set_visible(vis)
-                if vis:
-                    legline.set_alpha(1.0)
-                else:
-                    legline.set_alpha(0.2)
-                lockin_figure.canvas.draw()
-            lockin_figure.canvas.mpl_connect('pick_event',onpick)
-            lockin_figure.show()
-        if not current_trig:
-            current_plot.set_xlabel('Sample Bias (V)')
-            current_plot.set_ylabel('Current (nA)')
-            current_plot.set_title(title)
-            current_figure.show()
-          
-        return
+    def xlim(self, x_min, x_max):
+        self.ax.set_xlim(x_min, x_max)
+
+    def ylim(self, y_min, y_max):
+        self.ax.set_ylim(y_min, y_max)
+
+class colorplot():
+
+    def __init__(self, spectra_list, channel, index_range):
+
+        self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values
+        self.fig = plt.figure()
+        self.ax = self.fig.add_subplot(111)
+        bias = spectra_list[0].data.iloc[:,0].values
+        x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,index_range[0]:index_range[1]:len(spectra_list)*1j]
+        self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = 'seismic')
+        self.fig.colorbar(self.pcolor, ax = self.ax)
+
+    def xlim(self, x_min, x_max):
+        self.ax.set_xlim(x_min, x_max)
+
+    def ylim(self, y_min, y_max):
+        self.ax.set_ylim(y_min, y_max)
+
+    def clim(self, c_min, c_max):
+        self.pcolor.set_clim(c_min, c_max)
+
+    def colormap(self, cmap):
+        self.pcolor.set_cmap(cmap)
+
+def batch_load(basename, file_range, attribute_list = None):
+    
+    file_string = basename + '*.dat'
+    file_exist = glob.glob(file_string)
+    
+    file_list = []
+    spectrum_array = []
+    for idx, file_number in enumerate(file_range):
+        filename = basename + '%0*d' % (5, file_number) + '.dat'
+        if filename in file_exist:
+            file_list.append(filename)
+            spectrum_inst = spectrum(filename)
+            if attribute_list:
+                spectrum_inst.header['attribute'] = attribute_list[idx]
+            spectrum_array.append(spectrum_inst)
+    
+    return (spectrum_array, file_list)
 

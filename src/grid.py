@@ -1,134 +1,96 @@
 #Imports Grid Spectroscopy into Python
 
-import numpy
-import os.path
-import glob
+import numpy as np
+import matplotlib.pyplot as plt
+
 import re
 
-import matplotlib
-import matplotlib.pyplot
+#grid.nanonis_3ds(filename) loads Nanonis 3ds files into Python
+class nanonis_3ds():
 
-import scipy
-import scipy.signal
-
-#load_nanonis_3ds(filename) loads Nanonis 3ds files int Python
-class load_nanonis_3ds():
-
-    def __init__(self,filename):
-
-        self.header={}
-        self.data={}
+    def __init__(self, filename):
 
         with open(filename,'rb') as f:
-            s1=f.readline().strip()
-            s1_temp=re.split(' |"',s1)
-            self.header['x_pixels']=int(s1_temp[2])
-            self.header['y_pixels']=int(s1_temp[4])
-            s1=f.readline().strip()
-            s1_temp=re.split(';|=',s1)
-            self.header['x_center (nm)']=float(s1_temp[1])*1e9
-            self.header['y_center (nm)']=float(s1_temp[2])*1e9
-            self.header['x_size (nm)']=float(s1_temp[3])*1e9
-            self.header['y_size (nm)']=float(s1_temp[4])*1e9
-            s1=f.readline().strip()
-            s1_temp=re.split('=',s1)
-            if s1_temp[0] == 'Filetype':
-                s1=f.readline().strip()
-            s1=f.readline().strip()
-            s1=f.readline().strip()
-            s1=f.readline().strip()
-            s1_temp=re.split('=',s1)
-            self.header['n_parameters']=int(s1_temp[1])
-            s1=f.readline().strip() #This line reads "Experiment Size"
-            s1=f.readline().strip() #This line read Points/Spectra
-            s1_temp=re.split('=',s1)
-            self.header['points']=int(s1_temp[1])
-            s1=f.readline().strip()
-            s1_temp=re.split('"|;',s1)
-            channels=s1_temp[1:len(s1_temp)-1]
-            while s1 != ':HEADER_END:':
-                s1=f.readline().strip()
-            raw_data=f.read()
-            bpp=self.header['points']*len(channels)+self.header['n_parameters']
-            data_pts=self.header['x_pixels']*self.header['y_pixels']*bpp
-            numerical_data=numpy.frombuffer(raw_data, dtype='>f')
-            self.header['Start Bias (V)']=numerical_data[0]
-            self.header['End Bias (V)']=numerical_data[1]
+            file = f.read()
 
-        predata=[[{} for y in range(self.header['y_pixels'])] \
-                   for x in range(self.header['x_pixels'])]
+        header_text = ''
+        idx = 0
+        while True:
+            try:
+                header_text += chr(file[idx]) # Python 3
+            except TypeError:
+                header_text += file[idx] # Python 2
+            idx += 1
+            if ':HEADER_END:' in header_text:
+                break
+        header_text = header_text.split('\r\n')[:-1]
+        self.header = dict()
+        for entry in header_text:
+            self.header[entry.split('=')[0]] = entry.split('=')[1]
+
+        temp = re.split(' |"', self.header['Grid dim'])
+        self.header['x_pixels'] = int(temp[1])
+        self.header['y_pixels'] = int(temp[3])
+        temp = re.split(';|=', self.header['Grid settings'])
+        self.header['x_center (nm)'] = float(temp[1])*1e9
+        self.header['y_center (nm)'] = float(temp[2])*1e9
+        self.header['x_size (nm)'] = float(temp[3])*1e9
+        self.header['y_size (nm)'] = float(temp[4])*1e9
+        self.header["n_parameters"] = int(self.header["# Parameters (4 byte)"])
+        self.header['points'] = int(self.header['Points'])
+        channels = re.split('"|;',self.header['Channels'])[1:-1]
+
+        self.data = {}
+        raw_data = file[idx+2:]
+        bpp=self.header['points']*len(channels)+self.header['n_parameters']
+        data_pts=self.header['x_pixels']*self.header['y_pixels']*bpp
+        numerical_data=np.frombuffer(raw_data, dtype='>f')
+        self.header['Start Bias (V)']=numerical_data[0]
+        self.header['End Bias (V)']=numerical_data[1]
+
+        predata=[[{} for y in range(self.header['y_pixels'])] for x in range(self.header['x_pixels'])]
         for i in range(self.header['x_pixels']):
             for j in range(self.header['y_pixels']):
                 for k in range(len(channels)):
-                    start_index=(i*self.header['y_pixels']+j) * \
-                                 bpp+self.header['n_parameters']+k*self.header['points']
+                    start_index=(i*self.header['y_pixels']+j) * bpp+self.header['n_parameters']+k*self.header['points']
                     end_index=start_index+self.header['points']
                     if numerical_data[start_index:end_index] != []:
                         predata[i][j][channels[k]]=numerical_data[start_index:end_index]
                     else:
-                        predata[i][j][channels[k]]=numpy.zeros(end_index-start_index)
-        self.energy=numpy.linspace(self.header['Start Bias (V)'], \
-                                   self.header['End Bias (V)'],self.header['points'])
+                        predata[i][j][channels[k]]=np.zeros(end_index-start_index)
+        self.energy=np.linspace(self.header['Start Bias (V)'], self.header['End Bias (V)'],self.header['points'])
         for ty in channels:
-            self.data[ty]=numpy.array([[predata[x][y][ty] \
-                                        for y in range(self.header['y_pixels'])] \
-                                        for x in range(self.header['x_pixels'])])
+            self.data[ty]=np.array([[predata[x][y][ty] for y in range(self.header['y_pixels'])] for x in range(self.header['x_pixels'])])
 
-        return
 
-#Plot Nanonis 3ds File
-#Use arrow keys to change energy and color scheme
-#Left drag moves the maximum and minimum of scale
-#Right drag changes the range of scale
-class plot_nanonis_3ds():
+#Plot Nanonis 3ds data
+#Key press UP and DOWN to change energy
+#TO DO: Implement Fourier Transform
+class plot():
 
-    def __init__(self,filename):
+    def __init__(self, nanonis_3ds, channel):
 
-        tmp=load_nanonis_3ds(filename)
-        self.header=tmp.header
-        self.data=tmp.data['Lock In X (V)']
-        self.energy=tmp.energy
+        self.header = nanonis_3ds.header
+        self.data = nanonis_3ds.data[channel]
+        self.energy = nanonis_3ds.energy
 
-        #Load and Plot Data
-        #Interactive colorbar code borrowed from
-        #ster.kuleuven.be/~pieterd/python/html/plotting/interactive_colorbar.html
-        x_size=tmp.header['x_size (nm)']
-        y_size=tmp.header['x_size (nm)']
-        self.fig=matplotlib.pyplot.figure()
-        pl=self.fig.add_subplot(111)
-        ax=pl.imshow(numpy.flipud(self.data[:,:,0]),extent=[0,x_size,0,y_size])
-        pl.set_xlabel('X (nm)')
-        pl.set_ylabel('Y (nm)')
-        cbar=matplotlib.pyplot.colorbar(ax)
-        self.cycle = sorted([i for i in dir(matplotlib.pyplot.cm) \
-                             if hasattr(getattr(matplotlib.pyplot.cm,i),'N')])
-        self.index = self.cycle.index(cbar.get_cmap().name)
+        x_size = self.header['x_size (nm)']
+        y_size = self.header['x_size (nm)']
+        self.fig = plt.figure()
+        self.ax = self.fig.add_subplot(111)
+        self.plot = self.ax.imshow(np.flipud(self.data[:,:,0]), extent=[0,x_size,0,y_size], cmap = 'Blues_r')
+        self.ax.set_xlabel('X (nm)')
+        self.ax.set_ylabel('Y (nm)')
+        self.fig.colorbar(self.plot, ax = self.ax)
         self.free=0
-        title='Color Scheme = ' + self.cycle[self.index] + ', Energy = ' + \
-            str(self.energy[self.free]) + ' eV'
-        ax.get_axes().set_title(title)
-        self.press=None
+        title = 'Energy = ' + str(self.energy[self.free]) + ' eV'
+        self.ax.set_title(title)
+
         def key_press(event):
             if event.key[0:4] == 'alt+':
                 key=event.key[4:]
             else:
                 key=event.key
-            #color_schemes=['jet','pink','gray','Accent','BuGn', \
-            #               'BuPu','PiYG','Purples','Greens', \
-            #               'Spectral','cool','copper','hot', \
-            #               'spectral','spring','summer','winter']
-            if key == 'right':
-                self.index += 1
-            elif key == 'left':
-                self.index -= 1
-            if self.index < 0:
-                self.index = len(self.cycle)-1
-            elif self.index >= len(self.cycle):
-                self.index = 0
-            cmap = self.cycle[self.index]
-            cbar.set_cmap(cmap)
-            cbar.draw_all()
-            ax.set_cmap(cmap)
             if key == 'up':
                 self.free -= 1
             elif key == 'down':
@@ -137,41 +99,15 @@ class plot_nanonis_3ds():
                 self.free = len(self.energy)-1
             elif self.free >= len(self.energy):
                 self.free = 0
-            ax.set_data(numpy.flipud(self.data[:,:,self.free]))
-            title='Color Scheme = ' + cmap + ', Energy = ' + \
-            str(self.energy[self.free]) + ' eV'
-            ax.get_axes().set_title(title)
-            cbar.patch.figure.canvas.draw()
-        def on_press(event):
-            if event.inaxes != cbar.ax:
-                return
-            self.press = event.x, event.y
-        def on_motion(event):
-            if self.press is None: return
-            if event.inaxes != cbar.ax: return
-            xprev, yprev = self.press
-            dx = event.x - xprev
-            dy = event.y - yprev
-            self.press = event.x,event.y
-            scale = cbar.norm.vmax - cbar.norm.vmin
-            perc = 0.03
-            if event.button==1:
-                cbar.norm.vmin -= (perc*scale)*numpy.sign(dy)
-                cbar.norm.vmax -= (perc*scale)*numpy.sign(dy)
-            elif event.button==3:
-                cbar.norm.vmin -= (perc*scale)*numpy.sign(dy)
-                cbar.norm.vmax += (perc*scale)*numpy.sign(dy)
-            cbar.draw_all()
-            ax.set_norm(cbar.norm)
-            cbar.patch.figure.canvas.draw()
-        def on_release(event):
-            self.press = None
-            ax.set_norm(cbar.norm)
-            cbar.patch.figure.canvas.draw()
-        self.fig.canvas.mpl_connect('button_press_event',on_press)
-        self.fig.canvas.mpl_connect('key_press_event',key_press)
-        self.fig.canvas.mpl_connect('button_release_event',on_release)
-        self.fig.canvas.mpl_connect('motion_notify_event',on_motion)
-        self.fig.show()
+            self.plot.set_data(np.flipud(self.data[:,:,self.free]))
+            title='Energy = ' + str(self.energy[self.free]) + ' eV'
+            self.ax.set_title(title)
+            self.fig.canvas.draw()
 
-        return
+        self.fig.canvas.mpl_connect('key_press_event',key_press)
+
+    def clim(self, c_min, c_max):
+        self.plot.set_clim(c_min, c_max)
+
+    def colormap(self, cmap):
+        self.plot.set_cmap(cmap)

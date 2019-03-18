@@ -1,205 +1,121 @@
 #Imports Nanonis .sxm files into Python
 
-import numpy
-import os.path
-import re
+import numpy as np
 
-import matplotlib
-import matplotlib.pyplot
+import matplotlib.pyplot as plt
 
-import scipy
 import scipy.signal
 
 #Loads .sxm files into Nanonis
-#load_sxm(filename).header contains Nanonis header information
-#load_sxm(filename).data contains Numpy arrays with data
-class load_sxm():
+class sxm():
 
-    #This class is a modified version of
-    #https://github.com/fbianco/thoth/blob/master/nanonisfile.py
-    #but with some serious bugs fixed.
     def __init__(self, filename):
 
-        self.data = []
+        self.data = {}
         self.header = {}
-        self.header['filename'] = filename
 
-        self.file = open(os.path.normpath(self.header['filename']),'rb')
+        with open(filename,'rb') as f:
+            file = f.read()
 
-        s1 = self.file.readline()
-        if not re.match(':NANONIS_VERSION:',s1):
-                print "The file %s does not have the Nanonis SXM" % self.header['filename']
-                return
-
-        self.header['version'] = int(self.file.readline())
-
+        header_text = ''
+        idx = 0
         while True:
-            line = self.file.readline().strip()
-
-            if re.match('^:.*:$', line):
-                tagname = line[1:-1]
+            try:
+                header_text += chr(file[idx]) # Python 3
+            except TypeError:
+                header_text += file[idx] # Python 2
+            idx += 1
+            if ':SCANIT_END:' in header_text:
+                break
+        header_text = header_text.split('\n')
+        for header_line in header_text:
+            if ':' in header_line:
+                prev_header = header_line
+                self.header[header_line] = []
             else:
-                if 'Z-CONTROLLER' == tagname:
-                    keys = line.split('\t')
-                    values = self.file.readline().strip().split('\t')
-                    self.header['z-controller'] = dict(zip(keys,values))
-                elif tagname in ('BIAS','REC_TEMP','ACQ_TIME','SCAN_ANGLE'):
-                    self.header[tagname.lower()] = float(line)
-                elif tagname in ('SCAN_PIXELS','SCAN_TIME','SCAN_RANGE','SCAN_OFFSET'):
-                    self.header[tagname.lower()] = [float(i) for i in re.split('\s+', line)]
-                elif 'DATA_INFO' == tagname:
-                    if 1 == self.header['version']:
-                        keys = re.split('\s\s+',line)
-                    else:
-                        keys = line.split('\t')
-                    self.header['data_info'] = []
+                self.header[prev_header].append(header_line)
+        temp = self.header[':SCAN_PIXELS:'][0].strip().split()
+        self.header['x_pixels'] = int(temp[0])
+        self.header['y_pixels'] = int(temp[1])
+        temp = self.header[':SCAN_RANGE:'][0].strip().split()
+        self.header['x_range (nm)'] = float(temp[0])*1e9
+        self.header['y_range (nm)'] = float(temp[1])*1e9
+        temp = self.header[':SCAN_OFFSET:'][0].strip().split()
+        self.header['x_center (nm)'] = float(temp[0])*1e9
+        self.header['y_center (nm)'] = float(temp[1])*1e9
+        temp = self.header[':SCAN_ANGLE:'][0].strip().split()
+        self.header['angle'] = float(temp[0]) #Clockwise
+        self.header['direction'] = self.header[':SCAN_DIR:'][0]
+        temp = [chnls.split('\t') for chnls  in self.header[':DATA_INFO:'][1:-1]] # Will this handle multipass?
+        self.header['channels'] = [chnls[2].replace('_', ' ') + ' (' + chnls[3] + ')' for chnls in temp]
 
-                    while True:
-                        line = self.file.readline().strip()
-                        if not line:
-                            break
-                        values = line.strip().split('\t')
-                        self.header['data_info'].append(dict(zip(keys,values)))
-                elif tagname in ('SCANIT_TYPE','REC_DATE','REC_TIME','SCAN_FILE','SCAN_DIR'):
-                    self.header[tagname.lower()] = line
-                elif 'SCANIT_END' == tagname:
-                    break
-                else:
-                    if not self.header.has_key(tagname.lower()):
-                        self.header[tagname.lower()] = line
-                    else:
-                        self.header[tagname.lower()] += '\n' + line
+        raw_data = file[idx+5:]
+        #size_in_bytes = 4 * self.header['x_pixels'] * self.header['y_pixels']
+        #raw_data = list(zip(*[iter(raw_data)]*size))
+        size = self.header['x_pixels'] * self.header['y_pixels']
+        raw_data = np.frombuffer(raw_data, dtype='>f')
+        for idx, channel_name in enumerate(self.header['channels']):
+            channel_data = raw_data[idx*size*2:(idx+1)*size*2]
+            self.data[channel_name] = [channel_data[0:size].reshape(self.header['x_pixels'], self.header['y_pixels'])]
+            self.data[channel_name].append(channel_data[size:2*size].reshape(self.header['x_pixels'], self.header['y_pixels']))
 
-        s = '\x00\x00'
-        while '\x1A\x04' != s:
-            s = s[1] + self.file.read(1)
-
-        size = int(self.header['scan_pixels'][0]*self.header['scan_pixels'][1]*4) # 4 Bytes/px
-
-        nchannels = len(self.header['data_info'])
-        supp = 0
-        for n in range(nchannels):
-            supp += ('both' == self.header['data_info'][n]['Direction'])
-        nchannels+=supp
-
-        for i in range(nchannels):
-            data_buffer = self.file.read(size)
-            self.header['channel'] = i
-            self.data.append(numpy.ndarray(shape=numpy.flipud(self.header['scan_pixels']),dtype='>f',buffer=data_buffer))
-
-        return
-
-#plot_sxm(filename,channel,direction)
-#channel can be 'z', 'current', or whatever data is stored
 #direction = 0 for forward, direction = 1 for backwards
-class plot_sxm():
+class plot():
 
     #This class is named after plot_sxm.m
-    def __init__(self,filename,channel,direction = 0,flatten = 1):
+    def __init__(self, sxm_data, channel, direction = 0, flatten = True):
 
-        self.header = {}
-        
-        #If input filename is integer xxx, the read 'mxxx.sxm'
-        if type(filename) == str:
-            new_filename = filename
-        elif type(filename) == int:
-            new_filename = 'm' + '%0*d' % (3, filename) + '.sxm'
-        else:
-            return
+        self.data = sxm_data
 
-        #Load .sxm file data
-        nanonis = load_sxm(new_filename)
-        self.header['x_center (nm)']=nanonis.header['scan_offset'][0]*1e9
-        self.header['y_center (nm)']=nanonis.header['scan_offset'][1]*1e9
-        data_index = [data_type['Name'].lower() for data_type in nanonis.header['data_info']].index(channel.lower())
-        channel_index = 2*data_index + direction
-        image_data=nanonis.data[channel_index]
-
-        #Flip upside down if image was taken scanning down
-        if nanonis.header['scan_dir'] == 'down':
-            image_data=numpy.flipud(image_data)
-        
-        #Flatten
-        image_data.flags.writeable = True
-        avg_dat = image_data[~numpy.isnan(image_data)].mean()
-        #image_data = numpy.nan_to_num(image_data)
-        image_data[numpy.isnan(image_data)] = avg_dat
-        if flatten == 1:
+        image_data = np.copy(sxm_data.data[channel][direction])
+        avg_dat = image_data[~np.isnan(image_data)].mean()
+        image_data[np.isnan(image_data)] = avg_dat
+        if flatten:
             image_data=scipy.signal.detrend(image_data)
 
-        #Plot it!
-        self.header['x_range (nm)']=nanonis.header['scan_range'][0]*1e9
-        self.header['y_range (nm)']=nanonis.header['scan_range'][1]*1e9
-        image_x=numpy.linspace(0,self.header['y_range (nm)'],nanonis.header['scan_pixels'][1])
-        image_y=numpy.linspace(0,self.header['x_range (nm)'],nanonis.header['scan_pixels'][0])
-        ax=self.figure=matplotlib.pyplot.figure()
-        self.plot=self.figure.add_subplot(111, aspect="equal")
-        self.plot.set_xlabel('X (nm)')
-        self.plot.set_ylabel('Y (nm)')
-        title = new_filename + ', Vs = ' + str(nanonis.header['bias']) + 'V, I = ' \
-                + str(float(nanonis.header['z-controller>setpoint'])*1e9) + 'nA'
-        self.plot.set_title(title)
-        ax=self.plot.pcolor(image_y,image_x,image_data)
-        
-        cbar=matplotlib.pyplot.colorbar(ax)
-        self.cycle = sorted([i for i in dir(matplotlib.pyplot.cm) \
-                             if hasattr(getattr(matplotlib.pyplot.cm,i),'N')])
-        self.index = self.cycle.index(cbar.get_cmap().name)
-        self.free=0
-        self.press=None
-        def key_press(event):
-            if event.key[0:4] == 'alt+':
-                key=event.key[4:]
-            else:
-                key=event.key
-            #color_schemes=['jet','pink','gray','Accent','BuGn', \
-            #               'BuPu','PiYG','Purples','Greens', \
-            #               'Spectral','cool','copper','hot', \
-            #               'spectral','spring','summer','winter']
-            if key == 'right':
-                self.index += 1
-            elif key == 'left':
-                self.index -= 1
-            if self.index < 0:
-                self.index = len(self.cycle)-1
-            elif self.index >= len(self.cycle):
-                self.index = 0
-            cmap = self.cycle[self.index]
-            cbar.set_cmap(cmap)
-            cbar.draw_all()
-            ax.set_cmap(cmap)
-            ax.get_axes().set_title(title)
-            cbar.patch.figure.canvas.draw()
-        def on_press(event):
-            if event.inaxes != cbar.ax:
-                return
-            self.press = event.x, event.y
-        def on_motion(event):
-            if self.press is None: return
-            if event.inaxes != cbar.ax: return
-            xprev, yprev = self.press
-            dx = event.x - xprev
-            dy = event.y - yprev
-            self.press = event.x,event.y
-            scale = cbar.norm.vmax - cbar.norm.vmin
-            perc = 0.03
-            if event.button==1:
-                cbar.norm.vmin -= (perc*scale)*numpy.sign(dy)
-                cbar.norm.vmax -= (perc*scale)*numpy.sign(dy)
-            elif event.button==3:
-                cbar.norm.vmin -= (perc*scale)*numpy.sign(dy)
-                cbar.norm.vmax += (perc*scale)*numpy.sign(dy)
-            cbar.draw_all()
-            ax.set_norm(cbar.norm)
-            cbar.patch.figure.canvas.draw()
-        def on_release(event):
-            self.press = None
-            ax.set_norm(cbar.norm)
-            cbar.patch.figure.canvas.draw()
-        self.figure.canvas.mpl_connect('button_press_event',on_press)
-        self.figure.canvas.mpl_connect('key_press_event',key_press)
-        self.figure.canvas.mpl_connect('button_release_event',on_release)
-        self.figure.canvas.mpl_connect('motion_notify_event',on_motion)
-        self.figure.show()
-        
-        return
+        #Flip upside down if image was taken scanning down
+        if sxm_data.header['direction'] == 'down':
+            image_data=np.flipud(image_data)
+
+        #Flip left to right if backwards scan
+        if direction:
+            image_data=np.fliplr(image_data)
+
+        self.fig = plt.figure()
+        self.ax = self.fig.add_subplot(111)
+        x_range = sxm_data.header['x_range (nm)']
+        y_range = sxm_data.header['y_range (nm)']
+        x_pixels = sxm_data.header['x_pixels']
+        y_pixels = sxm_data.header['y_pixels']
+        y, x = np.mgrid[0:x_range:x_pixels*1j,0:y_range:y_pixels*1j]
+        self.pcolor = self.ax.pcolormesh(x, y, image_data, cmap = 'copper')
+        self.fig.colorbar(self.pcolor, ax = self.ax)
+
+    def xlim(self, x_min, x_max):
+        self.ax.set_xlim(x_min, x_max)
+
+    def ylim(self, y_min, y_max):
+        self.ax.set_ylim(y_min, y_max)
+
+    def clim(self, c_min, c_max):
+        self.pcolor.set_clim(c_min, c_max)
+
+    def colormap(self, cmap):
+        self.pcolor.set_cmap(cmap)
+
+    def add_spectra(self, spectra, labels):
+        theta = np.radians(self.data.header['angle'])
+        R = np.array(((np.cos(theta), -np.sin(theta)), (np.sin(theta), np.cos(theta))))
+        try:
+            spectra_iterator = iter(spectra)
+            label_iterator = iter(labels)
+        except TypeError:
+            spectra_iterator = iter([spectra])
+            label_iterator = iter([labels])
+        for spectrum_inst, label_inst in zip(spectra_iterator, label_iterator):
+            spectrum_to_center = (spectrum_inst.header['x (nm)'] - self.data.header['x_center (nm)'], spectrum_inst.header['y (nm)'] - self.data.header['y_center (nm)'])
+            spectrum_to_center = R.dot(spectrum_to_center)
+            x = spectrum_to_center[0] + self.data.header['x_range (nm)']/2
+            y = spectrum_to_center[1] + self.data.header['y_range (nm)']/2
+            self.ax.scatter(x, y, marker='x', color='red')
+            self.ax.text(x, y, label_inst, fontsize = 10)
