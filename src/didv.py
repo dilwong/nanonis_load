@@ -78,6 +78,7 @@ class plot():
                 legend_line.set_alpha(0.2)
             self.fig.canvas.draw()
         
+        self.pick_line = pick_line
         self.fig.canvas.mpl_connect('pick_event', pick_line)
 
     def xlim(self, x_min, x_max):
@@ -90,20 +91,40 @@ class colorplot():
 
     def __init__(self, spectra_list, channel, index_range = [-1000, 1000]):
 
+        self.channel = channel
+        self.spectra_list = spectra_list
+        
         self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
         bias = spectra_list[0].data.iloc[:,0].values
+        self.bias = bias
         if len(index_range) == 2:
             x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,index_range[0]:index_range[1]:len(spectra_list)*1j]
+            self.index_list = np.linspace(index_range[0],index_range[1],len(spectra_list))
         elif len(index_range) == len(spectra_list):
             x, y = np.meshgrid(bias, index_range)
             x = x.T
             y = y.T
+            self.index_list = np.array(index_range)
         else:
             x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,-1000:1000:len(spectra_list)*1j]
+            self.index_list = np.linspace(-1000,1000,len(spectra_list))
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = 'seismic')
         self.fig.colorbar(self.pcolor, ax = self.ax)
+
+        #self.button_array = []
+        self.xdata_array = []
+        self.ydata_array = []
+        def on_click(event):
+            #self.button_array.append(event.button)
+            if event.xdata is not None:
+                self.xdata_array.append(event.xdata)
+            if event.ydata is not None:
+                self.ydata_array.append(event.ydata)
+
+        self.on_click = on_click
+        cid = self.fig.canvas.mpl_connect('button_press_event', on_click)
 
     def xlim(self, x_min, x_max):
         self.ax.set_xlim(x_min, x_max)
@@ -116,6 +137,32 @@ class colorplot():
 
     def colormap(self, cmap):
         self.pcolor.set_cmap(cmap)
+
+    def clear_line_plots(self):
+        #self.button_array = []
+        self.xdata_array = []
+        self.ydata_array = []
+
+    def show_spectra(self):
+
+        sweeps = []
+        attrib_list = []
+        for index_value in self.ydata_array:
+            idx, index_num = min(enumerate(self.index_list), key = lambda x: abs(x[1] - index_value))
+            sweeps.append(self.spectra_list[idx])
+            attrib_list.append(index_num)
+
+        plot(sweeps, self.channel, names = attrib_list)
+    
+    # TO DO: Make interactive?
+    def show_index(self):
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        for bias_value in self.xdata_array:
+            idx, bias_num = min(enumerate(self.bias), key = lambda x: abs(x[1] - bias_value))
+            ax.plot(self.index_list, self.data[idx,:] ,label = str(bias_num))
+        ax.legend()
 
 def batch_load(basename, file_range, attribute_list = None):
     

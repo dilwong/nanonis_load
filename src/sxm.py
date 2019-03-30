@@ -104,6 +104,8 @@ class plot():
     def colormap(self, cmap):
         self.pcolor.set_cmap(cmap)
 
+    
+    # TO DO: Add feature such that clicking a red X shows spectrum.  Or hover over X to show spectrum.
     def add_spectra(self, spectra, labels):
         theta = np.radians(self.data.header['angle'])
         R = np.array(((np.cos(theta), -np.sin(theta)), (np.sin(theta), np.cos(theta))))

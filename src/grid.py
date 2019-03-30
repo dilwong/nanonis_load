@@ -121,6 +121,7 @@ class plot():
             self.ax.set_title(title)
             self.fig.canvas.draw()
 
+        self.key_press = key_press
         self.fig.canvas.mpl_connect('key_press_event',key_press)
 
     def clim(self, c_min, c_max):
