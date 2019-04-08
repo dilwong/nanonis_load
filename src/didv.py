@@ -113,15 +113,16 @@ class colorplot():
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = 'seismic')
         self.fig.colorbar(self.pcolor, ax = self.ax)
 
-        #self.button_array = []
         self.xdata_array = []
         self.ydata_array = []
         def on_click(event):
-            #self.button_array.append(event.button)
             if event.xdata is not None:
                 self.xdata_array.append(event.xdata)
             if event.ydata is not None:
                 self.ydata_array.append(event.ydata)
+            if event.button == 3:
+                self.xdata_array = []
+                self.ydata_array = []
 
         self.on_click = on_click
         cid = self.fig.canvas.mpl_connect('button_press_event', on_click)
@@ -139,7 +140,6 @@ class colorplot():
         self.pcolor.set_cmap(cmap)
 
     def clear_line_plots(self):
-        #self.button_array = []
         self.xdata_array = []
         self.ydata_array = []
 
