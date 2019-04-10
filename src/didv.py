@@ -89,16 +89,32 @@ class plot():
 
 class colorplot():
 
-    def __init__(self, spectra_list, channel, index_range = [-1000, 1000]):
+    def __init__(self, spectra_list, channel, index_range = None, start = None, increment = None, transform = None, diff_axis = 0):
 
         self.channel = channel
         self.spectra_list = spectra_list
         
-        self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values
+        bias = spectra_list[0].data.iloc[:,0].values
+        if transform is None:
+            self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values
+            self.bias = bias
+        else:
+            if (transform == 'diff') or (transform == 'derivative'):
+                self.data = np.diff(pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values, axis = diff_axis)
+                self.bias = bias[:-1]
+            else:
+                self.data = transform(pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values)
+                self.bias = bias
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
-        bias = spectra_list[0].data.iloc[:,0].values
-        self.bias = bias
+        if index_range is None:
+            if start is None:
+                index_range = [-1000, 1000]
+            else:
+                if increment is None:
+                    index_range = [start, 1000]
+                else:
+                    index_range = np.arange(len(spectra_list)) * increment + start # increment must be signed
         if len(index_range) == 2:
             x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,index_range[0]:index_range[1]:len(spectra_list)*1j]
             self.index_list = np.linspace(index_range[0],index_range[1],len(spectra_list))
@@ -120,12 +136,12 @@ class colorplot():
                 self.xdata_array.append(event.xdata)
             if event.ydata is not None:
                 self.ydata_array.append(event.ydata)
-            if event.button == 3:
+            if event.button == 3: # Right click to clear
                 self.xdata_array = []
                 self.ydata_array = []
 
         self.on_click = on_click
-        cid = self.fig.canvas.mpl_connect('button_press_event', on_click)
+        self.fig.canvas.mpl_connect('button_press_event', on_click)
 
     def xlim(self, x_min, x_max):
         self.ax.set_xlim(x_min, x_max)
@@ -143,7 +159,7 @@ class colorplot():
         self.xdata_array = []
         self.ydata_array = []
 
-    def show_spectra(self):
+    def show_spectra(self, channel = None):
 
         sweeps = []
         attrib_list = []
@@ -152,17 +168,62 @@ class colorplot():
             sweeps.append(self.spectra_list[idx])
             attrib_list.append(index_num)
 
-        plot(sweeps, self.channel, names = attrib_list)
+        if channel is None:
+            plot_channel = self.channel
+        else:
+            plot_channel = channel
+        plot(sweeps, plot_channel, names = attrib_list)
     
-    # TO DO: Make interactive?
-    def show_index(self):
+    def show_index(self, sweep = False):
 
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        for bias_value in self.xdata_array:
-            idx, bias_num = min(enumerate(self.bias), key = lambda x: abs(x[1] - bias_value))
-            ax.plot(self.index_list, self.data[idx,:] ,label = str(bias_num))
-        ax.legend()
+        if not sweep:
+            points_array = self.xdata_array
+            x_axis = self.index_list
+            selection_array = self.bias
+            slice_dict = {'right' : slice(None)}
+            slice_const = 'left'
+        else:
+            points_array = self.ydata_array
+            x_axis = self.bias
+            selection_array = self.index_list
+            slice_dict = {'left' : slice(None)}
+            slice_const = 'right'
+        for value in points_array:
+            slice_dict[slice_const], num = min(enumerate(selection_array), key = lambda x: abs(x[1] - value))
+            ax.plot(x_axis, self.data[slice_dict['left'],slice_dict['right']], label = str(num))
+        legend = ax.legend()
+
+        plot_lines = ax.get_lines()
+        legend_lines = legend.get_lines()
+        line_map = dict()
+        for legend_line, plot_line in zip(legend_lines,plot_lines):
+            legend_line.set_picker(5)
+            line_map[legend_line] = plot_line
+        
+        def pick_line(event):
+            legend_line = event.artist
+            plot_line = line_map[legend_line]
+            visibility = not plot_line.get_visible()
+            plot_line.set_visible(visibility)
+            if visibility:
+                legend_line.set_alpha(1)
+            else:
+                legend_line.set_alpha(0.2)
+            fig.canvas.draw()
+        
+        fig.canvas.mpl_connect('pick_event', pick_line)
+
+    def show_sweep(self):
+        self.show_index(sweep = True)
+
+    # Does not work with non-None transform
+    def replace_data(self, index, channel):
+        idx, _ = min(enumerate(self.index_list), key = lambda x: abs(x[1] - index))
+        self.data[:,idx] = self.spectra_list[idx].data[channel].values
+        self.pcolor.set_array(self.data[:-1,:-1].ravel())
+        self.fig.canvas.draw()
 
 def batch_load(basename, file_range, attribute_list = None):
     
@@ -181,4 +242,3 @@ def batch_load(basename, file_range, attribute_list = None):
             spectrum_array.append(spectrum_inst)
     
     return (spectrum_array, file_list)
-
