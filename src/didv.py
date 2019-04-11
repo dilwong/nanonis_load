@@ -94,6 +94,13 @@ class colorplot():
         self.channel = channel
         self.spectra_list = spectra_list
         
+        self.__draggables__ = []
+        self.__drag_h_count__ = 0
+        self.__drag_v_count__ = 0
+        self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        self.__drag_color_index__ = 0
+        self.__drag_rev_legend_map__ = dict()
+        
         bias = spectra_list[0].data.iloc[:,0].values
         if transform is None:
             self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values
@@ -224,6 +231,107 @@ class colorplot():
         self.data[:,idx] = self.spectra_list[idx].data[channel].values
         self.pcolor.set_array(self.data[:-1,:-1].ravel())
         self.fig.canvas.draw()
+
+    def plot_all(self, rng = slice(None)):
+        p = plot(self.spectra_list[rng], self.channel, names = self.index_list)
+        plot_lines = p.ax.get_lines()
+        for plot_line in plot_lines:
+            plot_line.set_visible(False)
+
+    def drag_bar(self, direction = 'horizontal'):
+
+        drag_index = len(self.__draggables__)
+        if direction[0] == 'h':
+            if self.__drag_h_count__ == 0:
+                self.__drag_h_fig__ = plt.figure()
+                self.__drag_h_ax__ = self.__drag_h_fig__.add_subplot(111)
+            line = self.ax.axhline(self.ax.get_ylim()[1], color = self.__color_cycle__[self.__drag_color_index__])
+            idx, index_value = min(enumerate(self.index_list), key = lambda x: abs(x[1] - self.ax.get_ylim()[1]))
+            p_line, = self.__drag_h_ax__.plot(self.bias, self.data[:,idx], label = str(index_value), color = self.__color_cycle__[self.__drag_color_index__])
+            legend = self.__drag_h_ax__.legend()
+            count = self.__drag_h_count__
+            self.__drag_h_count__ += 1
+        elif direction[0] == 'v':
+            if self.__drag_v_count__ == 0:
+                self.__drag_v_fig__ = plt.figure()
+                self.__drag_v_ax__ = self.__drag_v_fig__.add_subplot(111)
+            line = self.ax.axvline(self.ax.get_xlim()[0], color = self.__color_cycle__[self.__drag_color_index__])
+            idx, bias_value = min(enumerate(self.bias), key = lambda x: abs(x[1] - self.ax.get_xlim()[0]))
+            p_line, = self.__drag_v_ax__.plot(self.index_list, self.data[idx,:], label = str(bias_value), color = self.__color_cycle__[self.__drag_color_index__])
+            legend = self.__drag_v_ax__.legend()
+            count = self.__drag_v_count__
+            self.__drag_v_count__ += 1
+        else:
+            print('Direction must be "h" for horizontal or "v" for vertical.')
+            return
+        self.__draggables__.append({'count':count, 'direction': direction[0], 'line':line, 'press':False, 'plot':p_line, 'color':self.__color_cycle__[self.__drag_color_index__]})
+        line.set_picker(5)
+        self.__drag_color_index__ += 1
+        self.__drag_color_index__ = self.__drag_color_index__ % len(self.__color_cycle__)
+        for i, v in enumerate(self.__draggables__):
+            v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
+            v['plot'].axes.get_legend().get_lines()[v['count']].set_picker(5)
+            self.__drag_rev_legend_map__[v['plot']] = v['plot'].axes.get_legend().get_lines()[v['count']]
+
+        def on_press(event):
+            if event.inaxes != self.ax:
+                return
+            contains, _ = line.contains(event)
+            if not contains:
+                return
+            self.__draggables__[drag_index]['press'] = True
+
+        def on_motion(event):
+            if event.inaxes != self.ax:
+                return
+            if self.__draggables__[drag_index]['press'] is False:
+                return
+            if direction[0] == 'h':
+                self.__draggables__[drag_index]['line'].set_ydata([event.ydata, event.ydata])
+                idx, index_value = min(enumerate(self.index_list), key = lambda x: abs(x[1] - event.ydata))
+                self.__draggables__[drag_index]['plot'].set_ydata(self.data[:,idx])
+                self.__draggables__[drag_index]['plot'].set_label(str(index_value))
+                self.__drag_h_ax__.legend()
+                for i, v in enumerate(self.__draggables__):
+                    v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
+                self.__drag_h_fig__.canvas.draw()
+            elif direction[0] == 'v':
+                self.__draggables__[drag_index]['line'].set_xdata([event.xdata, event.xdata])
+                idx, bias_value = min(enumerate(self.bias), key = lambda x: abs(x[1] - event.xdata))
+                self.__draggables__[drag_index]['plot'].set_ydata(self.data[idx,:])
+                self.__draggables__[drag_index]['plot'].set_label(str(bias_value))
+                self.__drag_v_ax__.legend()
+                for i, v in enumerate(self.__draggables__):
+                    v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
+                self.__drag_v_fig__.canvas.draw()
+            else:
+                pass
+            self.fig.canvas.draw()
+
+        def on_release(event):
+            for i, v in enumerate(self.__draggables__):
+                v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
+                v['plot'].axes.get_legend().get_lines()[v['count']].set_picker(5)
+                self.__drag_rev_legend_map__[v['plot']] = v['plot'].axes.get_legend().get_lines()[v['count']]
+            self.__draggables__[drag_index]['press'] = False
+            self.fig.canvas.draw()
+
+        self.fig.canvas.mpl_connect('button_press_event', on_press)
+        self.fig.canvas.mpl_connect('motion_notify_event', on_motion)
+        self.fig.canvas.mpl_connect('button_release_event', on_release)
+
+        if ((direction[0] == 'h') and (self.__drag_h_count__ == 1)) or ((direction[0] == 'v') and (self.__drag_v_count__ == 1)):
+            
+            def pick_line(event):
+                legend_line = event.artist
+                for key, value in self.__drag_rev_legend_map__.items():
+                    if id(value) == id(legend_line):
+                        plot_line = key
+                visibility = not plot_line.get_visible()
+                plot_line.set_visible(visibility)
+                plot_line.figure.canvas.draw()
+            
+            p_line.figure.canvas.mpl_connect('pick_event', pick_line)
 
 def batch_load(basename, file_range, attribute_list = None):
     
