@@ -6,6 +6,7 @@ import pandas as pd
 import glob
 
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 #didv.spectra(filename) loads one Nanonis spectrum file (extension .dat) into Python
 class spectrum():
@@ -38,10 +39,23 @@ class spectrum():
 # Plot a spectrum
 class plot():
 
-    def __init__(self, spectra, channel, names = None, use_attributes = False):
+    def __init__(self, spectra, channel, names = None, use_attributes = False, start = None, increment = None, waterfall = 0.0, dark = False):
 
+        if waterfall != 0: # Does not work if spectra is a non-list iterator
+            if dark:
+                plt.style.use('dark_background')
+                cmap = cm.get_cmap('RdYlBu')(np.linspace(0.1,0.8,len(spectra)))
+            else:
+                plt.style.use('default')
+                cmap = cm.get_cmap('brg')(np.linspace(0,0.6,len(spectra)))
+            cmap=cmap[::-1]
+        
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
+        name_list = names
+
+        if (start is not None) and (increment is not None):
+            name_list = np.arange(len(spectra)) * increment + start # Does not work if spectra is a non-list iterator
         try:
             spectra_iterator = iter(spectra)
         except TypeError:
@@ -51,16 +65,27 @@ class plot():
                 if use_attributes:
                     spectrum_label = str(spectrum_inst.header['attribute'])
                 else:
-                    spectrum_label = str(names[idx])
+                    spectrum_label = str(name_list[idx])
             except (TypeError, IndexError):
                 spectrum_label = str(idx)
-            spectrum_inst.data.plot(x = spectrum_inst.data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label)
+            if waterfall == 0:
+                spectrum_inst.data.plot(x = spectrum_inst.data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label)
+            else:
+                spec_data = spectrum_inst.data.copy()
+                spec_data[channel] = spec_data[channel] + waterfall * idx * np.sign(increment) + 0.5 * (-np.sign(increment) + 1) * waterfall * len(spectra)
+                spec_data.plot(x = spectrum_inst.data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label, color=tuple(cmap[idx]))
         
         #Make a legend
         box = self.ax.get_position()
         self.ax.set_position([box.x0, box.y0, box.width * 0.9, box.height])
-        self.legend = self.ax.legend(loc = 'center left', bbox_to_anchor=(1, 0.5))
-        plot_lines = self.ax.get_lines()
+        if (waterfall == 0) or (np.sign(increment) < 0):
+            self.legend = self.ax.legend(loc = 'center left', bbox_to_anchor=(1, 0.5))
+            plot_lines = self.ax.get_lines()
+        else:
+            handles, labels = self.ax.get_legend_handles_labels()
+            self.legend = self.ax.legend(handles[::-1], labels[::-1], loc = 'center left', bbox_to_anchor=(1, 0.5))
+            plot_lines = self.ax.get_lines()
+            plot_lines.reverse()
         legend_lines = self.legend.get_lines()
         line_map = dict()
         for legend_line, plot_line in zip(legend_lines,plot_lines):
@@ -80,6 +105,9 @@ class plot():
         
         self.pick_line = pick_line
         self.fig.canvas.mpl_connect('pick_event', pick_line)
+        
+        if dark:
+            plt.style.use('default')
 
     def xlim(self, x_min, x_max):
         self.ax.set_xlim(x_min, x_max)
@@ -89,7 +117,7 @@ class plot():
 
 class colorplot():
 
-    def __init__(self, spectra_list, channel, index_range = None, start = None, increment = None, transform = None, diff_axis = 0):
+    def __init__(self, spectra_list, channel, index_range = None, start = None, increment = None, transform = None, diff_axis = 0, dark = False):
 
         self.channel = channel
         self.spectra_list = spectra_list
@@ -100,6 +128,9 @@ class colorplot():
         self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
         self.__drag_color_index__ = 0
         self.__drag_rev_legend_map__ = dict()
+
+        if dark:
+            plt.style.use('dark_background')
         
         bias = spectra_list[0].data.iloc[:,0].values
         if transform is None:
@@ -123,15 +154,15 @@ class colorplot():
                 else:
                     index_range = np.arange(len(spectra_list)) * increment + start # increment must be signed
         if len(index_range) == 2:
-            x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,index_range[0]:index_range[1]:len(spectra_list)*1j]
+            x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,index_range[0]:index_range[1]:len(spectra_list)*1j] # Will not handle non-linear bias array
             self.index_list = np.linspace(index_range[0],index_range[1],len(spectra_list))
         elif len(index_range) == len(spectra_list):
-            x, y = np.meshgrid(bias, index_range)
+            x, y = np.meshgrid(bias, index_range) # Will handle non-linear bias array
             x = x.T
             y = y.T
             self.index_list = np.array(index_range)
         else:
-            x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,-1000:1000:len(spectra_list)*1j]
+            x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,-1000:1000:len(spectra_list)*1j] # Will not handle non-linear bias array
             self.index_list = np.linspace(-1000,1000,len(spectra_list))
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = 'seismic')
         self.fig.colorbar(self.pcolor, ax = self.ax)
@@ -149,6 +180,9 @@ class colorplot():
 
         self.on_click = on_click
         self.fig.canvas.mpl_connect('button_press_event', on_click)
+
+        if dark:
+            plt.style.use('default')
 
     def xlim(self, x_min, x_max):
         self.ax.set_xlim(x_min, x_max)
