@@ -1,9 +1,11 @@
-A library of routines for importing Nanonis SPM data files into a Python 2.7 or Python 3 environment.  The data can then be plotted and analyzed.
+A library of routines for importing Nanonis SPM data files into a Python environment.  The data can then be plotted and analyzed.
 
 The following file types are supported:
 *.dat Bias Spectroscopy files
 *.3ds Grid Spectroscopy files
 *.sxm Image files
+
+This library is written to be compatible with both Python 2.7 and Python 3.
 
 ====================================================================================
 

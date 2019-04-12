@@ -164,7 +164,8 @@ class colorplot():
         else:
             x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,-1000:1000:len(spectra_list)*1j] # Will not handle non-linear bias array
             self.index_list = np.linspace(-1000,1000,len(spectra_list))
-        self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = 'seismic')
+        pcolor_cm = 'RdYlBu_r' # pcolor_cm = 'seismic'
+        self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = pcolor_cm)
         self.fig.colorbar(self.pcolor, ax = self.ax)
 
         self.xdata_array = []
@@ -272,15 +273,16 @@ class colorplot():
         for plot_line in plot_lines:
             plot_line.set_visible(False)
 
-    def drag_bar(self, direction = 'horizontal'):
+    def drag_bar(self, direction = 'horizontal', locator = False):
 
         drag_index = len(self.__draggables__)
         if direction[0] == 'h':
             if self.__drag_h_count__ == 0:
                 self.__drag_h_fig__ = plt.figure()
                 self.__drag_h_ax__ = self.__drag_h_fig__.add_subplot(111)
-            line = self.ax.axhline(self.ax.get_ylim()[1], color = self.__color_cycle__[self.__drag_color_index__])
-            idx, index_value = min(enumerate(self.index_list), key = lambda x: abs(x[1] - self.ax.get_ylim()[1]))
+            y_init = self.ax.get_ylim()[1] - (self.ax.get_ylim()[1] - self.ax.get_ylim()[0]) * 0.1
+            line = self.ax.axhline(y_init, color = self.__color_cycle__[self.__drag_color_index__])
+            idx, index_value = min(enumerate(self.index_list), key = lambda x: abs(x[1] - y_init))
             p_line, = self.__drag_h_ax__.plot(self.bias, self.data[:,idx], label = str(index_value), color = self.__color_cycle__[self.__drag_color_index__])
             legend = self.__drag_h_ax__.legend()
             count = self.__drag_h_count__
@@ -289,12 +291,15 @@ class colorplot():
             if self.__drag_v_count__ == 0:
                 self.__drag_v_fig__ = plt.figure()
                 self.__drag_v_ax__ = self.__drag_v_fig__.add_subplot(111)
-            line = self.ax.axvline(self.ax.get_xlim()[0], color = self.__color_cycle__[self.__drag_color_index__])
-            idx, bias_value = min(enumerate(self.bias), key = lambda x: abs(x[1] - self.ax.get_xlim()[0]))
+            x_init = self.ax.get_xlim()[0] + (self.ax.get_xlim()[1] - self.ax.get_xlim()[0]) * 0.1
+            line = self.ax.axvline(x_init, color = self.__color_cycle__[self.__drag_color_index__])
+            idx, bias_value = min(enumerate(self.bias), key = lambda x: abs(x[1] - x_init))
             p_line, = self.__drag_v_ax__.plot(self.index_list, self.data[idx,:], label = str(bias_value), color = self.__color_cycle__[self.__drag_color_index__])
             legend = self.__drag_v_ax__.legend()
             count = self.__drag_v_count__
             self.__drag_v_count__ += 1
+            if locator:
+                v_line = self.__drag_h_ax__.axvline(x_init, color = self.__color_cycle__[self.__drag_color_index__])
         else:
             print('Direction must be "h" for horizontal or "v" for vertical.')
             return
@@ -341,6 +346,9 @@ class colorplot():
             else:
                 pass
             self.fig.canvas.draw()
+            if locator:
+                v_line.set_xdata([event.xdata, event.xdata])
+                self.__drag_h_fig__.canvas.draw()
 
         def on_release(event):
             for i, v in enumerate(self.__draggables__):
