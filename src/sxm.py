@@ -103,7 +103,6 @@ class plot():
 
     def colormap(self, cmap):
         self.pcolor.set_cmap(cmap)
-
     
     # TO DO: Add feature such that clicking a red X shows spectrum.  Or hover over X to show spectrum.
     def add_spectra(self, spectra, labels):
@@ -118,8 +117,8 @@ class plot():
         for spectrum_inst, label_inst in zip(spectra_iterator, label_iterator):
             spectrum_to_center = (spectrum_inst.header['x (nm)'] - self.data.header['x_center (nm)'], spectrum_inst.header['y (nm)'] - self.data.header['y_center (nm)'])
             spectrum_to_center = R.dot(spectrum_to_center)
-            x = spectrum_to_center[0] + self.data.header['x_range (nm)']/2
-            y = spectrum_to_center[1] + self.data.header['y_range (nm)']/2
+            x = spectrum_to_center[0] + self.data.header['x_range (nm)'] * 0.5
+            y = spectrum_to_center[1] + self.data.header['y_range (nm)'] * 0.5
             self.ax.scatter(x, y, marker='x', color='red')
             self.ax.text(x, y, label_inst, fontsize = 10)
     

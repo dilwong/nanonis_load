@@ -307,7 +307,7 @@ class colorplot():
         line.set_picker(5)
         self.__drag_color_index__ += 1
         self.__drag_color_index__ = self.__drag_color_index__ % len(self.__color_cycle__)
-        for i, v in enumerate(self.__draggables__):
+        for v in self.__draggables__:
             v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
             v['plot'].axes.get_legend().get_lines()[v['count']].set_picker(5)
             self.__drag_rev_legend_map__[v['plot']] = v['plot'].axes.get_legend().get_lines()[v['count']]
@@ -331,7 +331,7 @@ class colorplot():
                 self.__draggables__[drag_index]['plot'].set_ydata(self.data[:,idx])
                 self.__draggables__[drag_index]['plot'].set_label(str(index_value))
                 self.__drag_h_ax__.legend()
-                for i, v in enumerate(self.__draggables__):
+                for v in self.__draggables__:
                     v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
                 self.__drag_h_fig__.canvas.draw()
             elif direction[0] == 'v':
@@ -340,7 +340,7 @@ class colorplot():
                 self.__draggables__[drag_index]['plot'].set_ydata(self.data[idx,:])
                 self.__draggables__[drag_index]['plot'].set_label(str(bias_value))
                 self.__drag_v_ax__.legend()
-                for i, v in enumerate(self.__draggables__):
+                for v in self.__draggables__:
                     v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
                 self.__drag_v_fig__.canvas.draw()
             else:
@@ -351,7 +351,7 @@ class colorplot():
                 self.__drag_h_fig__.canvas.draw()
 
         def on_release(event):
-            for i, v in enumerate(self.__draggables__):
+            for v in self.__draggables__:
                 v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
                 v['plot'].axes.get_legend().get_lines()[v['count']].set_picker(5)
                 self.__drag_rev_legend_map__[v['plot']] = v['plot'].axes.get_legend().get_lines()[v['count']]
@@ -375,7 +375,7 @@ class colorplot():
             
             p_line.figure.canvas.mpl_connect('pick_event', pick_line)
 
-def batch_load(basename, file_range, attribute_list = None):
+def batch_load(basename, file_range = range(1000), attribute_list = None):
     
     file_string = basename + '*.dat'
     file_exist = glob.glob(file_string)
