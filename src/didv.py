@@ -375,8 +375,11 @@ class colorplot():
             
             p_line.figure.canvas.mpl_connect('pick_event', pick_line)
 
-def batch_load(basename, file_range = range(1000), attribute_list = None):
+def batch_load(basename, file_range = None, attribute_list = None):
     
+    if file_range is None:
+        file_range = range(1000)
+
     file_string = basename + '*.dat'
     file_exist = glob.glob(file_string)
     
