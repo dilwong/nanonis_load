@@ -88,7 +88,7 @@ class plot():
         x_pixels = sxm_data.header['x_pixels']
         y_pixels = sxm_data.header['y_pixels']
         y, x = np.mgrid[0:x_range:x_pixels*1j,0:y_range:y_pixels*1j]
-        self.pcolor = self.ax.pcolormesh(x, y, image_data, cmap = 'copper')
+        self.pcolor = self.ax.pcolormesh(x, y, image_data, cmap = 'copper') # pcolormesh chops off last column and row here
         self.fig.colorbar(self.pcolor, ax = self.ax)
         self.image_data = image_data
 

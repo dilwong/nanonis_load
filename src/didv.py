@@ -129,6 +129,8 @@ class colorplot():
         self.__drag_color_index__ = 0
         self.__drag_rev_legend_map__ = dict()
 
+        pcolor_cm = 'RdYlBu_r'
+
         if dark:
             plt.style.use('dark_background')
         
@@ -140,6 +142,7 @@ class colorplot():
             if (transform == 'diff') or (transform == 'derivative'):
                 self.data = np.diff(pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values, axis = diff_axis)
                 self.bias = bias[:-1]
+                pcolor_cm = 'seismic'
             else:
                 self.data = transform(pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values)
                 self.bias = bias
@@ -154,17 +157,19 @@ class colorplot():
                 else:
                     index_range = np.arange(len(spectra_list)) * increment + start # increment must be signed
         if len(index_range) == 2:
-            x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,index_range[0]:index_range[1]:len(spectra_list)*1j] # Will not handle non-linear bias array
             self.index_list = np.linspace(index_range[0],index_range[1],len(spectra_list))
-        elif len(index_range) == len(spectra_list):
-            x, y = np.meshgrid(bias, index_range) # Will handle non-linear bias array
-            x = x.T
-            y = y.T
+        if len(index_range) == len(spectra_list):
             self.index_list = np.array(index_range)
-        else:
-            x, y = np.mgrid[bias[0]:bias[-1]:bias.size*1j,-1000:1000:len(spectra_list)*1j] # Will not handle non-linear bias array
-            self.index_list = np.linspace(-1000,1000,len(spectra_list))
-        pcolor_cm = 'RdYlBu_r' # pcolor_cm = 'seismic'
+        new_bias = (bias[1:] + bias[:-1]) * 0.5
+        new_bias = np.insert(new_bias, 0, bias[0] - (bias[1] - bias[0]) * 0.5)
+        new_index_range = (self.index_list[1:] + self.index_list[:-1]) * 0.5
+        new_index_range = np.insert(new_index_range, 0, self.index_list[0] - (self.index_list[1] - self.index_list[0]) * 0.5)
+        if (transform != 'diff') and (transform != 'derivative'):
+            new_bias = np.append(new_bias, bias[-1] + (bias[-1] - bias[-2]) * 0.5)
+            new_index_range = np.append(new_index_range, self.index_list[-1] + (self.index_list[-1] - self.index_list[-2]) * 0.5)
+        x, y = np.meshgrid(new_bias, new_index_range) # Will handle non-linear bias array
+        x = x.T
+        y = y.T
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = pcolor_cm)
         self.fig.colorbar(self.pcolor, ax = self.ax)
 
@@ -259,6 +264,12 @@ class colorplot():
 
     def show_sweep(self):
         self.show_index(sweep = True)
+
+    def contour(self):
+        c_x, c_y = np.meshgrid(self.bias, self.index_list)
+        c_x = c_x.T
+        c_y = c_y.T
+        self.ax.contour(c_x, c_y, self.data, cmap = 'jet')
 
     # Does not work with non-None transform
     def replace_data(self, index, channel):
@@ -395,3 +406,17 @@ def batch_load(basename, file_range = None, attribute_list = None):
             spectrum_array.append(spectrum_inst)
     
     return (spectrum_array, file_list)
+
+def quick_colorplot(*args, **kwargs):
+
+    spectra = []
+    for arg in args:
+        s, f = batch_load(arg)
+        if f == []:
+            print('WARNING: NO FILES WITH BASENAME ' + arg)
+        spectra.extend(s)
+
+    if spectra == []:
+        print('ERROR: NO FILES!')
+        return
+    return colorplot(spectra, **kwargs)

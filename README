@@ -6,8 +6,3 @@ The following file types are supported:
 *.sxm Image files
 
 This library is written to be compatible with both Python 2.7 and Python 3.
-
-====================================================================================
-
-Copyright (c) 2014 - 2019 Dillon Wong
-This is free software that can be distributed and/or modified as per GPLv3.  Use of this software is done so without warranty or liability.

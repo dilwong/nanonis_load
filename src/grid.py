@@ -176,7 +176,13 @@ class linecut():
         self.ax.set_xlabel('Sample Bias (V)')
         self.ax.set_ylabel('Distance (nm)')
 
-        x, y = np.meshgrid(self.bias, self.dist)
+        new_bias = (self.bias[1:] + self.bias[:-1]) * 0.5
+        new_bias = np.insert(new_bias, 0, self.bias[0] - (self.bias[1] - self.bias[0]) * 0.5)
+        new_bias = np.append(new_bias, self.bias[-1] + (self.bias[-1] - self.bias[-2]) * 0.5)
+        new_dist = (self.dist[1:] + self.dist[:-1]) * 0.5
+        new_dist = np.insert(new_dist, 0, self.dist[0] - (self.dist[1] - self.dist[0]) * 0.5)
+        new_dist = np.append(new_dist, self.dist[-1] + (self.dist[-1] - self.dist[-2]) * 0.5)
+        x, y = np.meshgrid(new_bias, new_dist)
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = 'RdYlBu_r')
         self.fig.colorbar(self.pcolor, ax = self.ax)
 
