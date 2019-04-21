@@ -31,6 +31,8 @@ class spectrum():
                 self.header['y (nm)'] = float(self.header['Y (m)'])*1e9
             if 'Z (m)' in self.header:
                 self.header['z (nm)'] = float(self.header['Z (m)'])*1e9
+            if 'Gate Voltage (V)' in self.header:
+                self.header['Gate (V)'] = float(self.header['Gate Voltage (V)'])
             if attribute:
                 self.header['attribute'] = attribute
 
@@ -117,7 +119,7 @@ class plot():
 
 class colorplot():
 
-    def __init__(self, spectra_list, channel, index_range = None, start = None, increment = None, transform = None, diff_axis = 0, dark = False):
+    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False):
 
         self.channel = channel
         self.spectra_list = spectra_list
@@ -128,6 +130,7 @@ class colorplot():
         self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
         self.__drag_color_index__ = 0
         self.__drag_rev_legend_map__ = dict()
+        self.__active_dragbar__ = None
 
         pcolor_cm = 'RdYlBu_r'
 
@@ -172,6 +175,8 @@ class colorplot():
         y = y.T
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = pcolor_cm)
         self.fig.colorbar(self.pcolor, ax = self.ax)
+        self.ax.set_xlabel('Sample Bias (V)')
+        self.ax.set_ylabel(index_label)
 
         self.xdata_array = []
         self.ydata_array = []
@@ -345,6 +350,7 @@ class colorplot():
                 for v in self.__draggables__:
                     v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
                 self.__drag_h_fig__.canvas.draw()
+                self.__active_dragbar__ = (drag_index, idx, 'h')
             elif direction[0] == 'v':
                 self.__draggables__[drag_index]['line'].set_xdata([event.xdata, event.xdata])
                 idx, bias_value = min(enumerate(self.bias), key = lambda x: abs(x[1] - event.xdata))
@@ -369,9 +375,39 @@ class colorplot():
             self.__draggables__[drag_index]['press'] = False
             self.fig.canvas.draw()
 
+        def key_press(event):
+            if (self.__active_dragbar__ is not None) and (self.__active_dragbar__[0] == drag_index):
+                if self.__active_dragbar__[2] == 'h':
+                    if (event.key == 'up') or (event.key == 'down'):
+                        try:
+                            if event.key == 'up':
+                                if self.index_list[1] > self.index_list[0]:
+                                    step = 1
+                                else:
+                                    step = -1
+                            if event.key == 'down':
+                                if self.index_list[1] > self.index_list[0]:
+                                    step = -1
+                                else:
+                                    step = 1
+                            idx = self.__active_dragbar__[1] + step
+                            index_value = self.index_list[idx]
+                            self.__draggables__[drag_index]['line'].set_ydata([index_value, index_value])
+                            self.__draggables__[drag_index]['plot'].set_ydata(self.data[:,idx])
+                            self.__draggables__[drag_index]['plot'].set_label(str(index_value))
+                            self.__drag_h_ax__.legend()
+                            for v in self.__draggables__:
+                                v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
+                            self.__drag_h_fig__.canvas.draw()
+                            self.__active_dragbar__ = (drag_index, idx, 'h')
+                            self.fig.canvas.draw()
+                        except IndexError:
+                            pass
+
         self.fig.canvas.mpl_connect('button_press_event', on_press)
         self.fig.canvas.mpl_connect('motion_notify_event', on_motion)
         self.fig.canvas.mpl_connect('button_release_event', on_release)
+        self.fig.canvas.mpl_connect('key_press_event', key_press)
 
         if ((direction[0] == 'h') and (self.__drag_h_count__ == 1)) or ((direction[0] == 'v') and (self.__drag_v_count__ == 1)):
             
@@ -419,4 +455,13 @@ def quick_colorplot(*args, **kwargs):
     if spectra == []:
         print('ERROR: NO FILES!')
         return
-    return colorplot(spectra, **kwargs)
+    if 'channel' in kwargs:
+        return colorplot(spectra, **kwargs)
+    else:
+        for spec in spectra:
+            spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
+        if ('start' not in kwargs) and ('increment' not in kwargs) and ('Gate (V)' in spectra[0].header):
+            gate_range = [spec.header['Gate (V)'] for spec in spectra]
+            return colorplot(spectra, channel = 'Input 2 (V)', index_range = gate_range, **kwargs)
+        else:
+            return colorplot(spectra, channel = 'Input 2 (V)', **kwargs)
