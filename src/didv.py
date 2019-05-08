@@ -51,7 +51,7 @@ class plot():
                 plt.style.use('default')
                 cmap = cm.get_cmap('brg')(np.linspace(0,0.6,len(spectra)))
             cmap=cmap[::-1]
-        
+
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
         name_list = names
@@ -76,7 +76,7 @@ class plot():
                 spec_data = spectrum_inst.data.copy()
                 spec_data[channel] = spec_data[channel] + waterfall * idx * np.sign(increment) + 0.5 * (-np.sign(increment) + 1) * waterfall * len(spectra)
                 spec_data.plot(x = spectrum_inst.data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label, color=tuple(cmap[idx]))
-        
+
         #Make a legend
         box = self.ax.get_position()
         self.ax.set_position([box.x0, box.y0, box.width * 0.9, box.height])
@@ -93,7 +93,7 @@ class plot():
         for legend_line, plot_line in zip(legend_lines,plot_lines):
             legend_line.set_picker(5)
             line_map[legend_line] = plot_line
-        
+
         def pick_line(event):
             legend_line = event.artist
             plot_line = line_map[legend_line]
@@ -104,10 +104,10 @@ class plot():
             else:
                 legend_line.set_alpha(0.2)
             self.fig.canvas.draw()
-        
+
         self.pick_line = pick_line
         self.fig.canvas.mpl_connect('pick_event', pick_line)
-        
+
         if dark:
             plt.style.use('default')
 
@@ -119,11 +119,11 @@ class plot():
 
 class colorplot():
 
-    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False):
+    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, double_lockin = False):
 
         self.channel = channel
         self.spectra_list = spectra_list
-        
+
         self.__draggables__ = []
         self.__drag_h_count__ = 0
         self.__drag_v_count__ = 0
@@ -136,7 +136,7 @@ class colorplot():
 
         if dark:
             plt.style.use('dark_background')
-        
+
         bias = spectra_list[0].data.iloc[:,0].values
         if transform is None:
             self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values
@@ -225,7 +225,7 @@ class colorplot():
         else:
             plot_channel = channel
         plot(sweeps, plot_channel, names = attrib_list)
-    
+
     def show_index(self, sweep = False):
 
         fig = plt.figure()
@@ -253,7 +253,7 @@ class colorplot():
         for legend_line, plot_line in zip(legend_lines,plot_lines):
             legend_line.set_picker(5)
             line_map[legend_line] = plot_line
-        
+
         def pick_line(event):
             legend_line = event.artist
             plot_line = line_map[legend_line]
@@ -264,7 +264,7 @@ class colorplot():
             else:
                 legend_line.set_alpha(0.2)
             fig.canvas.draw()
-        
+
         fig.canvas.mpl_connect('pick_event', pick_line)
 
     def show_sweep(self):
@@ -410,7 +410,7 @@ class colorplot():
         self.fig.canvas.mpl_connect('key_press_event', key_press)
 
         if ((direction[0] == 'h') and (self.__drag_h_count__ == 1)) or ((direction[0] == 'v') and (self.__drag_v_count__ == 1)):
-            
+
             def pick_line(event):
                 legend_line = event.artist
                 for key, value in self.__drag_rev_legend_map__.items():
@@ -419,17 +419,17 @@ class colorplot():
                 visibility = not plot_line.get_visible()
                 plot_line.set_visible(visibility)
                 plot_line.figure.canvas.draw()
-            
+
             p_line.figure.canvas.mpl_connect('pick_event', pick_line)
 
 def batch_load(basename, file_range = None, attribute_list = None):
-    
+
     if file_range is None:
         file_range = range(1000)
 
     file_string = basename + '*.dat'
     file_exist = glob.glob(file_string)
-    
+
     file_list = []
     spectrum_array = []
     for idx, file_number in enumerate(file_range):
@@ -440,7 +440,7 @@ def batch_load(basename, file_range = None, attribute_list = None):
             if attribute_list:
                 spectrum_inst.header['attribute'] = attribute_list[idx]
             spectrum_array.append(spectrum_inst)
-    
+
     return (spectrum_array, file_list)
 
 def quick_colorplot(*args, **kwargs):
@@ -460,6 +460,10 @@ def quick_colorplot(*args, **kwargs):
     else:
         for spec in spectra:
             spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
+            if 'double_lockin' in kwargs:
+                if kwargs['double_lockin'] == True:
+                    spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
+                    spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
         if ('start' not in kwargs) and ('increment' not in kwargs) and ('Gate (V)' in spectra[0].header):
             gate_range = [spec.header['Gate (V)'] for spec in spectra]
             return colorplot(spectra, channel = 'Input 2 (V)', index_range = gate_range, **kwargs)
