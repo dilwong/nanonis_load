@@ -119,7 +119,7 @@ class plot():
 
 class colorplot():
 
-    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, double_lockin = False):
+    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, **kwargs):
 
         self.channel = channel
         self.spectra_list = spectra_list
@@ -466,6 +466,8 @@ def quick_colorplot(*args, **kwargs):
                     spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
         if ('start' not in kwargs) and ('increment' not in kwargs) and ('Gate (V)' in spectra[0].header):
             gate_range = [spec.header['Gate (V)'] for spec in spectra]
+            if 'gate_transform' in kwargs:
+                gate_range = kwargs['gate_transform'](np.array(gate_range))
             return colorplot(spectra, channel = 'Input 2 (V)', index_range = gate_range, **kwargs)
         else:
             return colorplot(spectra, channel = 'Input 2 (V)', **kwargs)
