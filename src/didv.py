@@ -41,7 +41,7 @@ class spectrum():
 # Plot a spectrum
 class plot():
 
-    def __init__(self, spectra, channel, names = None, use_attributes = False, start = None, increment = None, waterfall = 0.0, dark = False):
+    def __init__(self, spectra, channel, names = None, use_attributes = False, start = None, increment = None, waterfall = 0.0, dark = False, gate_as_index = True):
 
         if waterfall != 0: # Does not work if spectra is a non-list iterator
             if dark:
@@ -70,6 +70,8 @@ class plot():
                     spectrum_label = str(name_list[idx])
             except (TypeError, IndexError):
                 spectrum_label = str(idx)
+            if ('Gate (V)' in spectrum_inst.header) and (gate_as_index):
+                    spectrum_label = str(spectrum_inst.header['Gate (V)'])
             if waterfall == 0:
                 spectrum_inst.data.plot(x = spectrum_inst.data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label)
             else:
