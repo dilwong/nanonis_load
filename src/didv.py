@@ -464,6 +464,8 @@ def quick_colorplot(*args, **kwargs):
                 if kwargs['double_lockin'] == True:
                     spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
                     spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
+            if 'ping_remove' in kwargs:
+                ping_remove(spec, kwargs['ping_remove'])
         if ('start' not in kwargs) and ('increment' not in kwargs) and ('Gate (V)' in spectra[0].header):
             gate_range = [spec.header['Gate (V)'] for spec in spectra]
             if 'gate_transform' in kwargs:
@@ -471,3 +473,13 @@ def quick_colorplot(*args, **kwargs):
             return colorplot(spectra, channel = 'Input 2 (V)', index_range = gate_range, **kwargs)
         else:
             return colorplot(spectra, channel = 'Input 2 (V)', **kwargs)
+
+def ping_remove(spectrum, n): #Removes pings from Input 2 [...] (V), if average over 3 sweeps or more
+    data = pd.DataFrame()
+    for channel_name in spectrum.data.columns:
+        if 'Input 2 [0' in channel_name:
+            data[channel_name] = spectrum.data[channel_name]
+    std = data.std(axis=1) #Maybe use interquartile range instead of standard deviation
+    median = data.median(axis = 1)
+    data[np.abs(data.sub(median,axis = 0)).gt(n*std,axis=0)] = np.nan
+    spectrum.data['Input 2 (V)'] = data.mean(axis = 1)
