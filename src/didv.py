@@ -121,7 +121,7 @@ class plot():
 
 class colorplot():
 
-    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, **kwargs):
+    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, axes = None, **kwargs):
 
         self.channel = channel
         self.spectra_list = spectra_list
@@ -151,8 +151,12 @@ class colorplot():
             else:
                 self.data = transform(pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values)
                 self.bias = bias
-        self.fig = plt.figure()
-        self.ax = self.fig.add_subplot(111)
+        if axes is None:
+            self.fig = plt.figure()
+            self.ax = self.fig.add_subplot(111)
+        else:
+            self.ax = axes
+            self.fig = axes.figure
         if index_range is None:
             if start is None:
                 index_range = [-1000, 1000]
@@ -291,40 +295,53 @@ class colorplot():
         for plot_line in plot_lines:
             plot_line.set_visible(False)
 
-    def drag_bar(self, direction = 'horizontal', locator = False):
+    def drag_bar(self, direction = 'horizontal', locator = False, axes = None, color = None):
 
         drag_index = len(self.__draggables__)
         if direction[0] == 'h':
             if self.__drag_h_count__ == 0:
-                self.__drag_h_fig__ = plt.figure()
-                self.__drag_h_ax__ = self.__drag_h_fig__.add_subplot(111)
+                if axes is None:
+                    self.__drag_h_fig__ = plt.figure()
+                    self.__drag_h_ax__ = self.__drag_h_fig__.add_subplot(111)
+                else:
+                    self.__drag_h_fig__ = axes.figure
+                    self.__drag_h_ax__ = axes
             y_init = self.ax.get_ylim()[1] - (self.ax.get_ylim()[1] - self.ax.get_ylim()[0]) * 0.1
-            line = self.ax.axhline(y_init, color = self.__color_cycle__[self.__drag_color_index__])
+            if color is None:
+                line_color = self.__color_cycle__[self.__drag_color_index__]
+            else:
+                line_color = color
+            line = self.ax.axhline(y_init, color = line_color)
             idx, index_value = min(enumerate(self.index_list), key = lambda x: abs(x[1] - y_init))
-            p_line, = self.__drag_h_ax__.plot(self.bias, self.data[:,idx], label = str(index_value), color = self.__color_cycle__[self.__drag_color_index__])
+            p_line, = self.__drag_h_ax__.plot(self.bias, self.data[:,idx], label = str(index_value), color = line_color)
             legend = self.__drag_h_ax__.legend()
             count = self.__drag_h_count__
             self.__drag_h_count__ += 1
         elif direction[0] == 'v':
             if self.__drag_v_count__ == 0:
-                self.__drag_v_fig__ = plt.figure()
-                self.__drag_v_ax__ = self.__drag_v_fig__.add_subplot(111)
+                if axes is None:
+                    self.__drag_v_fig__ = plt.figure()
+                    self.__drag_v_ax__ = self.__drag_v_fig__.add_subplot(111)
+                else:
+                    self.__drag_v_fig__ = axes.figure
+                    self.__drag_v_ax__ = axes
             x_init = self.ax.get_xlim()[0] + (self.ax.get_xlim()[1] - self.ax.get_xlim()[0]) * 0.1
-            line = self.ax.axvline(x_init, color = self.__color_cycle__[self.__drag_color_index__])
+            line = self.ax.axvline(x_init, color = line_color)
             idx, bias_value = min(enumerate(self.bias), key = lambda x: abs(x[1] - x_init))
-            p_line, = self.__drag_v_ax__.plot(self.index_list, self.data[idx,:], label = str(bias_value), color = self.__color_cycle__[self.__drag_color_index__])
+            p_line, = self.__drag_v_ax__.plot(self.index_list, self.data[idx,:], label = str(bias_value), color = line_color)
             legend = self.__drag_v_ax__.legend()
             count = self.__drag_v_count__
             self.__drag_v_count__ += 1
             if locator:
-                v_line = self.__drag_h_ax__.axvline(x_init, color = self.__color_cycle__[self.__drag_color_index__])
+                v_line = self.__drag_h_ax__.axvline(x_init, color = line_color)
         else:
             print('Direction must be "h" for horizontal or "v" for vertical.')
             return
         self.__draggables__.append({'count':count, 'direction': direction[0], 'line':line, 'press':False, 'plot':p_line, 'color':self.__color_cycle__[self.__drag_color_index__]})
         line.set_picker(5)
-        self.__drag_color_index__ += 1
-        self.__drag_color_index__ = self.__drag_color_index__ % len(self.__color_cycle__)
+        if color is None:
+            self.__drag_color_index__ += 1
+            self.__drag_color_index__ = self.__drag_color_index__ % len(self.__color_cycle__)
         for v in self.__draggables__:
             v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
             v['plot'].axes.get_legend().get_lines()[v['count']].set_picker(5)
