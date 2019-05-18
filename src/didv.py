@@ -8,6 +8,8 @@ import glob
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
+import interactive_colorplot
+
 #didv.spectra(filename) loads one Nanonis spectrum file (extension .dat) into Python
 class spectrum():
 
@@ -119,7 +121,7 @@ class plot():
     def ylim(self, y_min, y_max):
         self.ax.set_ylim(y_min, y_max)
 
-class colorplot():
+class colorplot(interactive_colorplot.colorplot):
 
     def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, axes = None, **kwargs):
 
@@ -131,8 +133,6 @@ class colorplot():
         self.__drag_v_count__ = 0
         self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
         self.__drag_color_index__ = 0
-        self.__drag_rev_legend_map__ = dict()
-        self.__active_dragbar__ = None
 
         pcolor_cm = 'RdYlBu_r'
 
@@ -169,6 +169,8 @@ class colorplot():
             self.index_list = np.linspace(index_range[0],index_range[1],len(spectra_list))
         if len(index_range) == len(spectra_list):
             self.index_list = np.array(index_range)
+        self.gate = self.index_list
+        
         new_bias = (bias[1:] + bias[:-1]) * 0.5
         new_bias = np.insert(new_bias, 0, bias[0] - (bias[1] - bias[0]) * 0.5)
         new_index_range = (self.index_list[1:] + self.index_list[:-1]) * 0.5
@@ -184,262 +186,46 @@ class colorplot():
         self.ax.set_xlabel('Sample Bias (V)')
         self.ax.set_ylabel(index_label)
 
-        self.xdata_array = []
-        self.ydata_array = []
-        def on_click(event):
-            if event.xdata is not None:
-                self.xdata_array.append(event.xdata)
-            if event.ydata is not None:
-                self.ydata_array.append(event.ydata)
-            if event.button == 3: # Right click to clear
-                self.xdata_array = []
-                self.ydata_array = []
-
-        self.on_click = on_click
-        self.fig.canvas.mpl_connect('button_press_event', on_click)
-
         if dark:
             plt.style.use('default')
 
-    def xlim(self, x_min, x_max):
-        self.ax.set_xlim(x_min, x_max)
-
-    def ylim(self, y_min, y_max):
-        self.ax.set_ylim(y_min, y_max)
-
-    def clim(self, c_min, c_max):
-        self.pcolor.set_clim(c_min, c_max)
-
-    def colormap(self, cmap):
-        self.pcolor.set_cmap(cmap)
-
-    def clear_line_plots(self):
-        self.xdata_array = []
-        self.ydata_array = []
-
-    def show_spectra(self, channel = None):
-
-        sweeps = []
-        attrib_list = []
-        for index_value in self.ydata_array:
-            idx, index_num = min(enumerate(self.index_list), key = lambda x: abs(x[1] - index_value))
-            sweeps.append(self.spectra_list[idx])
-            attrib_list.append(index_num)
-
-        if channel is None:
-            plot_channel = self.channel
-        else:
-            plot_channel = channel
-        plot(sweeps, plot_channel, names = attrib_list)
-
-    def show_index(self, sweep = False):
-
-        fig = plt.figure()
-        ax = fig.add_subplot(111)
-        if not sweep:
-            points_array = self.xdata_array
-            x_axis = self.index_list
-            selection_array = self.bias
-            slice_dict = {'right' : slice(None)}
-            slice_const = 'left'
-        else:
-            points_array = self.ydata_array
-            x_axis = self.bias
-            selection_array = self.index_list
-            slice_dict = {'left' : slice(None)}
-            slice_const = 'right'
-        for value in points_array:
-            slice_dict[slice_const], num = min(enumerate(selection_array), key = lambda x: abs(x[1] - value))
-            ax.plot(x_axis, self.data[slice_dict['left'],slice_dict['right']], label = str(num))
-        legend = ax.legend()
-
-        plot_lines = ax.get_lines()
-        legend_lines = legend.get_lines()
-        line_map = dict()
-        for legend_line, plot_line in zip(legend_lines,plot_lines):
-            legend_line.set_picker(5)
-            line_map[legend_line] = plot_line
-
-        def pick_line(event):
-            legend_line = event.artist
-            plot_line = line_map[legend_line]
-            visibility = not plot_line.get_visible()
-            plot_line.set_visible(visibility)
-            if visibility:
-                legend_line.set_alpha(1)
-            else:
-                legend_line.set_alpha(0.2)
-            fig.canvas.draw()
-
-        fig.canvas.mpl_connect('pick_event', pick_line)
-
-    def show_sweep(self):
-        self.show_index(sweep = True)
-
-    def contour(self):
-        c_x, c_y = np.meshgrid(self.bias, self.index_list)
-        c_x = c_x.T
-        c_y = c_y.T
-        self.ax.contour(c_x, c_y, self.data, cmap = 'jet')
-
-    # Does not work with non-None transform
-    def replace_data(self, index, channel):
-        idx, _ = min(enumerate(self.index_list), key = lambda x: abs(x[1] - index))
-        self.data[:,idx] = self.spectra_list[idx].data[channel].values
-        self.pcolor.set_array(self.data[:-1,:-1].ravel())
-        self.fig.canvas.draw()
-
-    def plot_all(self, rng = slice(None)):
-        p = plot(self.spectra_list[rng], self.channel, names = self.index_list)
-        plot_lines = p.ax.get_lines()
-        for plot_line in plot_lines:
-            plot_line.set_visible(False)
+        interactive_colorplot.colorplot.__init__(self)
 
     def drag_bar(self, direction = 'horizontal', locator = False, axes = None, color = None):
 
-        drag_index = len(self.__draggables__)
         if direction[0] == 'h':
-            if self.__drag_h_count__ == 0:
-                if axes is None:
+            if axes is None:
+                if self.__drag_h_count__ == 0:
                     self.__drag_h_fig__ = plt.figure()
                     self.__drag_h_ax__ = self.__drag_h_fig__.add_subplot(111)
-                else:
-                    self.__drag_h_fig__ = axes.figure
-                    self.__drag_h_ax__ = axes
-            y_init = self.ax.get_ylim()[1] - (self.ax.get_ylim()[1] - self.ax.get_ylim()[0]) * 0.1
-            if color is None:
-                line_color = self.__color_cycle__[self.__drag_color_index__]
-            else:
-                line_color = color
-            line = self.ax.axhline(y_init, color = line_color)
-            idx, index_value = min(enumerate(self.index_list), key = lambda x: abs(x[1] - y_init))
-            p_line, = self.__drag_h_ax__.plot(self.bias, self.data[:,idx], label = str(index_value), color = line_color)
-            legend = self.__drag_h_ax__.legend()
-            count = self.__drag_h_count__
+                axes = self.__drag_h_ax__
+            initial_value = self.ax.get_ylim()[1] - (self.ax.get_ylim()[1] - self.ax.get_ylim()[0]) * 0.1
             self.__drag_h_count__ += 1
+            if locator:
+                locator_axes = self.__drag_v_ax__
+            else:
+                locator_axes = None
         elif direction[0] == 'v':
-            if self.__drag_v_count__ == 0:
-                if axes is None:
+            if axes is None:
+                if self.__drag_v_count__ == 0:
                     self.__drag_v_fig__ = plt.figure()
                     self.__drag_v_ax__ = self.__drag_v_fig__.add_subplot(111)
-                else:
-                    self.__drag_v_fig__ = axes.figure
-                    self.__drag_v_ax__ = axes
-            x_init = self.ax.get_xlim()[0] + (self.ax.get_xlim()[1] - self.ax.get_xlim()[0]) * 0.1
-            line = self.ax.axvline(x_init, color = line_color)
-            idx, bias_value = min(enumerate(self.bias), key = lambda x: abs(x[1] - x_init))
-            p_line, = self.__drag_v_ax__.plot(self.index_list, self.data[idx,:], label = str(bias_value), color = line_color)
-            legend = self.__drag_v_ax__.legend()
-            count = self.__drag_v_count__
+                axes = self.__drag_v_ax__
+            initial_value = self.ax.get_xlim()[0] + (self.ax.get_xlim()[1] - self.ax.get_xlim()[0]) * 0.1
             self.__drag_v_count__ += 1
             if locator:
-                v_line = self.__drag_h_ax__.axvline(x_init, color = line_color)
+                locator_axes = self.__drag_h_ax__
+            else:
+                locator_axes = None
         else:
             print('Direction must be "h" for horizontal or "v" for vertical.')
             return
-        self.__draggables__.append({'count':count, 'direction': direction[0], 'line':line, 'press':False, 'plot':p_line, 'color':self.__color_cycle__[self.__drag_color_index__]})
-        line.set_picker(5)
         if color is None:
+            color = self.__color_cycle__[self.__drag_color_index__]
             self.__drag_color_index__ += 1
             self.__drag_color_index__ = self.__drag_color_index__ % len(self.__color_cycle__)
-        for v in self.__draggables__:
-            v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
-            v['plot'].axes.get_legend().get_lines()[v['count']].set_picker(5)
-            self.__drag_rev_legend_map__[v['plot']] = v['plot'].axes.get_legend().get_lines()[v['count']]
 
-        def on_press(event):
-            if event.inaxes != self.ax:
-                return
-            contains, _ = line.contains(event)
-            if not contains:
-                return
-            self.__draggables__[drag_index]['press'] = True
-
-        def on_motion(event):
-            if event.inaxes != self.ax:
-                return
-            if self.__draggables__[drag_index]['press'] is False:
-                return
-            if direction[0] == 'h':
-                self.__draggables__[drag_index]['line'].set_ydata([event.ydata, event.ydata])
-                idx, index_value = min(enumerate(self.index_list), key = lambda x: abs(x[1] - event.ydata))
-                self.__draggables__[drag_index]['plot'].set_ydata(self.data[:,idx])
-                self.__draggables__[drag_index]['plot'].set_label(str(index_value))
-                self.__drag_h_ax__.legend()
-                for v in self.__draggables__:
-                    v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
-                self.__drag_h_fig__.canvas.draw()
-                self.__active_dragbar__ = (drag_index, idx, 'h')
-            elif direction[0] == 'v':
-                self.__draggables__[drag_index]['line'].set_xdata([event.xdata, event.xdata])
-                idx, bias_value = min(enumerate(self.bias), key = lambda x: abs(x[1] - event.xdata))
-                self.__draggables__[drag_index]['plot'].set_ydata(self.data[idx,:])
-                self.__draggables__[drag_index]['plot'].set_label(str(bias_value))
-                self.__drag_v_ax__.legend()
-                for v in self.__draggables__:
-                    v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
-                self.__drag_v_fig__.canvas.draw()
-            else:
-                pass
-            self.fig.canvas.draw()
-            if locator:
-                v_line.set_xdata([event.xdata, event.xdata])
-                self.__drag_h_fig__.canvas.draw()
-
-        def on_release(event):
-            for v in self.__draggables__:
-                v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
-                v['plot'].axes.get_legend().get_lines()[v['count']].set_picker(5)
-                self.__drag_rev_legend_map__[v['plot']] = v['plot'].axes.get_legend().get_lines()[v['count']]
-            self.__draggables__[drag_index]['press'] = False
-            self.fig.canvas.draw()
-
-        def key_press(event):
-            if (self.__active_dragbar__ is not None) and (self.__active_dragbar__[0] == drag_index):
-                if self.__active_dragbar__[2] == 'h':
-                    if (event.key == 'up') or (event.key == 'down'):
-                        try:
-                            if event.key == 'up':
-                                if self.index_list[1] > self.index_list[0]:
-                                    step = 1
-                                else:
-                                    step = -1
-                            if event.key == 'down':
-                                if self.index_list[1] > self.index_list[0]:
-                                    step = -1
-                                else:
-                                    step = 1
-                            idx = self.__active_dragbar__[1] + step
-                            index_value = self.index_list[idx]
-                            self.__draggables__[drag_index]['line'].set_ydata([index_value, index_value])
-                            self.__draggables__[drag_index]['plot'].set_ydata(self.data[:,idx])
-                            self.__draggables__[drag_index]['plot'].set_label(str(index_value))
-                            self.__drag_h_ax__.legend()
-                            for v in self.__draggables__:
-                                v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
-                            self.__drag_h_fig__.canvas.draw()
-                            self.__active_dragbar__ = (drag_index, idx, 'h')
-                            self.fig.canvas.draw()
-                        except IndexError:
-                            pass
-
-        self.fig.canvas.mpl_connect('button_press_event', on_press)
-        self.fig.canvas.mpl_connect('motion_notify_event', on_motion)
-        self.fig.canvas.mpl_connect('button_release_event', on_release)
-        self.fig.canvas.mpl_connect('key_press_event', key_press)
-
-        if ((direction[0] == 'h') and (self.__drag_h_count__ == 1)) or ((direction[0] == 'v') and (self.__drag_v_count__ == 1)):
-
-            def pick_line(event):
-                legend_line = event.artist
-                for key, value in self.__drag_rev_legend_map__.items():
-                    if id(value) == id(legend_line):
-                        plot_line = key
-                visibility = not plot_line.get_visible()
-                plot_line.set_visible(visibility)
-                plot_line.figure.canvas.draw()
-
-            p_line.figure.canvas.mpl_connect('pick_event', pick_line)
+        return interactive_colorplot.drag_bar(self, direction, axes, color, initial_value, self.bias, self.index_list, locator_axes = locator_axes)
 
 def batch_load(basename, file_range = None, attribute_list = None):
 
@@ -469,6 +255,13 @@ def quick_colorplot(*args, **kwargs):
         s, f = batch_load(arg)
         if f == []:
             print('WARNING: NO FILES WITH BASENAME ' + arg)
+        if ('monotonic' in kwargs) and kwargs['monotonic']:
+            if len(spectra) != 0:
+                extreme_gate = s[0].header['Gate (V)']
+                if spectra[0].header['Gate (V)'] > spectra[1].header['Gate (V)']: # Decreasing
+                    spectra = [spec for spec in spectra if spec.header['Gate (V)'] > extreme_gate]
+                elif spectra[0].header['Gate (V)'] < spectra[1].header['Gate (V)']: # Increasing
+                    spectra = [spec for spec in spectra if spec.header['Gate (V)'] < extreme_gate]
         spectra.extend(s)
 
     if spectra == []:
@@ -492,6 +285,56 @@ def quick_colorplot(*args, **kwargs):
             return colorplot(spectra, channel = 'Input 2 (V)', index_range = gate_range, **kwargs)
         else:
             return colorplot(spectra, channel = 'Input 2 (V)', **kwargs)
+
+class multi_colorplot():
+
+    def __init__(self, n, direction = 'h'):
+
+        self.fig = plt.figure()
+        self.axes = self.fig.subplots(1,n)
+        self.colorplots = []
+        self.drag_bars = []
+        self.max = n
+        self.direction = direction
+        self.count = 0
+
+        self.drag_fig = plt.figure()
+        self.drag_ax = self.drag_fig.subplots()
+
+        self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    
+    def add_data(self, *args, **kwargs):
+
+        if self.count < self.max:
+            new_colorplot = quick_colorplot(*args, axes = self.axes[len(self.colorplots)], **kwargs)
+            self.colorplots.append(new_colorplot)
+            self.drag_bars.append(new_colorplot.drag_bar(direction = self.direction, axes = self.drag_ax, color = self.__color_cycle__[self.count]))
+            self.count +=1
+        else:
+            print('No more data can be added to the figure!')
+            return
+            
+        if len(self.colorplots) == self.max:
+            self.drag_bars[0].join_drag_bars(*self.drag_bars[1:])
+    
+    def fix_layout(self):
+        self.fig.tight_layout()
+    
+    def clim(self, c_min, c_max):
+        for cplot in self.colorplots:
+            cplot.clim(c_min, c_max)
+
+    def xlim(self, x_min, x_max):
+        for cplot in self.colorplots:
+            cplot.xlim(x_min, x_max)
+
+    def ylim(self, y_min, y_max):
+        for cplot in self.colorplots:
+            cplot.ylim(y_min, y_max)
+
+    def colormap(self, cmap):
+        for cplot in self.colorplots:
+            cplot.colormap(cmap)
 
 def ping_remove(spectrum, n): #Removes pings from Input 2 [...] (V), if average over 3 sweeps or more
     data = pd.DataFrame()
