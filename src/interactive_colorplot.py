@@ -41,6 +41,7 @@ class drag_bar():
         self.data = colorplot.data
         self.press = False
         self.linked_bars = []
+        self.fast = False
 
         self.colorplot.__draggables__.append(self)
 
@@ -60,6 +61,7 @@ class drag_bar():
             print('Direction must be "h" for horizontal or "v" for vertical.')
             return
         self.index, self.index_value = min(enumerate(self.tune_list), key = lambda x: abs(x[1] - initial_value))
+        self.phantom_index_value = self.index_value
         self.slice_dict[self.slice_const] = self.index
         self.colorplot_line = axline_function(self.index_value, color = self.color)
         self.plot, = self.drag_ax.plot(self.indep_list, self.data[self.slice_dict['left'],self.slice_dict['right']], label = str(self.index_value), color = self.color)
@@ -97,7 +99,8 @@ class drag_bar():
         def on_release(event):
             self.refresh_legend()
             self.press = False
-            self.colorplot.fig.canvas.draw()
+            if not self.fast:
+                self.colorplot.fig.canvas.draw()
             self.phantom_index_value = self.index_value
 
         def key_press(event):
@@ -159,7 +162,7 @@ class drag_bar():
             self.drag_ax.legend()
             self.refresh_legend()
             self.drag_fig.canvas.draw()
-            self.colorplot.fig.canvas.draw() # TO DO: Optimize using blitting
+            self.colorplot.fig.canvas.draw()
         if self.locator_axes is not None:
                 self.locator_line.set_xdata([self.index_value, self.index_value])
                 self.locator_axes.figure.canvas.draw()
@@ -171,7 +174,14 @@ class drag_bar():
             self.drag_ax.legend()
             self.refresh_legend()
             self.drag_fig.canvas.draw()
-            self.colorplot.fig.canvas.draw()
+            if self.fast:
+                self.colorplot.fig.canvas.restore_region(self.background)
+                self.colorplot.ax.draw_artist(self.colorplot_line)
+                for bar in self.linked_bars:
+                    self.colorplot.ax.draw_artist(bar.colorplot_line)
+                self.colorplot.fig.canvas.blit(self.colorplot.fig.bbox)
+            else:
+                self.colorplot.fig.canvas.draw()
 
     def refresh_legend(self):
         for bar in self.colorplot.__draggables__:

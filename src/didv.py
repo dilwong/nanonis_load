@@ -297,6 +297,7 @@ class multi_colorplot():
         self.max = n
         self.direction = direction
         self.count = 0
+        self.fast = False
 
         self.drag_fig = plt.figure()
         self.drag_ax = self.drag_fig.subplots()
@@ -336,12 +337,33 @@ class multi_colorplot():
         for cplot in self.colorplots:
             cplot.colormap(cmap)
 
+    def set_fast(self):
+        if self.fast == False:
+            for bar in self.drag_bars:
+                bar.colorplot_line.set_animated(True)
+            self.fig.canvas.draw()
+            self.background = self.fig.canvas.copy_from_bbox(self.fig.bbox)
+            for bar in self.drag_bars:
+                bar.fast = True
+                bar.background = self.background
+                bar.colorplot.ax.draw_artist(bar.colorplot_line)
+            self.fig.canvas.blit(self.fig.bbox)
+            self.fast = True
+    
+    def stop_fast(self):
+        if self.fast:
+            for bar in self.drag_bars:
+                bar.colorplot_line.set_animated(False)
+                bar.fast = False
+            self.fig.canvas.draw()
+            self.fast = False
+
 def ping_remove(spectrum, n): #Removes pings from Input 2 [...] (V), if average over 3 sweeps or more
     data = pd.DataFrame()
     for channel_name in spectrum.data.columns:
         if 'Input 2 [0' in channel_name:
             data[channel_name] = spectrum.data[channel_name]
-    std = data.std(axis=1) #Maybe use interquartile range instead of standard deviation
+    std = data.std(axis=1) # Maybe use interquartile range instead of standard deviation
     median = data.median(axis = 1)
     data[np.abs(data.sub(median,axis = 0)).gt(n*std,axis=0)] = np.nan
     spectrum.data['Input 2 (V)'] = data.mean(axis = 1)
