@@ -6,6 +6,11 @@ import matplotlib
 
 import re
 
+try:
+    from . import interactive_colorplot
+except ImportError:
+    import interactive_colorplot
+
 #grid.nanonis_3ds(filename) loads Nanonis 3ds files into Python
 class nanonis_3ds():
 
@@ -154,9 +159,11 @@ class plot():
         self.fft_plot.set_cmap(cmap)
 
 #Loads and plots 3DS line cuts
-class linecut():
+class linecut(interactive_colorplot.colorplot):
 
     def __init__(self, filename, channel):
+
+        interactive_colorplot.colorplot.__init__(self)
 
         #Load data with filename
         self.nanonis_3ds = nanonis_3ds(filename)
@@ -183,147 +190,22 @@ class linecut():
         new_dist = np.insert(new_dist, 0, self.dist[0] - (self.dist[1] - self.dist[0]) * 0.5)
         new_dist = np.append(new_dist, self.dist[-1] + (self.dist[-1] - self.dist[-2]) * 0.5)
         x, y = np.meshgrid(new_bias, new_dist)
+        x = x.T
+        y = y.T
+        self.data = self.data.T
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = 'RdYlBu_r')
         self.fig.colorbar(self.pcolor, ax = self.ax)
 
-        self.__draggables__ = []
-        self.__drag_h_count__ = 0
-        self.__drag_v_count__ = 0
-        self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-        self.__drag_color_index__ = 0
-        self.__drag_rev_legend_map__ = dict()
         self.show_image_set = False
-
-    def xlim(self, x_min, x_max):
-        self.ax.set_xlim(x_min, x_max)
-
-    def ylim(self, y_min, y_max):
-        self.ax.set_ylim(y_min, y_max)
-
-    def clim(self, c_min, c_max):
-        self.pcolor.set_clim(c_min, c_max)
-
-    def colormap(self, cmap):
-        self.pcolor.set_cmap(cmap)
-
-    def drag_bar(self, direction = 'horizontal', locator = False):
-
-        drag_index = len(self.__draggables__)
-        if direction[0] == 'h':
-            if self.__drag_h_count__ == 0:
-                self.__drag_h_fig__ = plt.figure()
-                self.__drag_h_ax__ = self.__drag_h_fig__.add_subplot(111)
-            y_init = self.ax.get_ylim()[1] - (self.ax.get_ylim()[1] - self.ax.get_ylim()[0]) * 0.1
-            line = self.ax.axhline(y_init, color = self.__color_cycle__[self.__drag_color_index__])
-            idx, index_value = min(enumerate(self.dist), key = lambda x: abs(x[1] - y_init))
-            p_line, = self.__drag_h_ax__.plot(self.bias, self.data[idx,:], label = str(index_value), color = self.__color_cycle__[self.__drag_color_index__])
-            legend = self.__drag_h_ax__.legend()
-            count = self.__drag_h_count__
-            self.__drag_h_count__ += 1
-        elif direction[0] == 'v':
-            if self.__drag_v_count__ == 0:
-                self.__drag_v_fig__ = plt.figure()
-                self.__drag_v_ax__ = self.__drag_v_fig__.add_subplot(111)
-            x_init = self.ax.get_xlim()[0] + (self.ax.get_xlim()[1] - self.ax.get_xlim()[0]) * 0.1
-            line = self.ax.axvline(x_init, color = self.__color_cycle__[self.__drag_color_index__])
-            idx, bias_value = min(enumerate(self.bias), key = lambda x: abs(x[1] - x_init))
-            p_line, = self.__drag_v_ax__.plot(self.dist, self.data[:,idx], label = str(bias_value), color = self.__color_cycle__[self.__drag_color_index__])
-            legend = self.__drag_v_ax__.legend()
-            count = self.__drag_v_count__
-            self.__drag_v_count__ += 1
-            if locator:
-                v_line = self.__drag_h_ax__.axvline(x_init, color = self.__color_cycle__[self.__drag_color_index__])
-        else:
-            print('Direction must be "h" for horizontal or "v" for vertical.')
-            return
-        self.__draggables__.append({'count':count, 'direction': direction[0], 'line':line, 'press':False, 'plot':p_line, 'color':self.__color_cycle__[self.__drag_color_index__], 'index':idx})
-        
-        if (direction[0] == 'h') and (self.show_image_set == True):
-            self.__draggables__[drag_index]['sxm_circle'] = matplotlib.patches.Circle((self.transformed_x_values[idx], self.transformed_y_values[idx]), \
-                radius = 0.5, color = self.__color_cycle__[self.__drag_color_index__], zorder = 10)
-            self.sxm_fig.ax.add_patch(self.__draggables__[drag_index]['sxm_circle'])
-        
-        line.set_picker(5)
-        self.__drag_color_index__ += 1
-        self.__drag_color_index__ = self.__drag_color_index__ % len(self.__color_cycle__)
-        for v in self.__draggables__:
-            v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
-            v['plot'].axes.get_legend().get_lines()[v['count']].set_picker(5)
-            self.__drag_rev_legend_map__[v['plot']] = v['plot'].axes.get_legend().get_lines()[v['count']]
-
-        def on_press(event):
-            if event.inaxes != self.ax:
-                return
-            contains, _ = line.contains(event)
-            if not contains:
-                return
-            self.__draggables__[drag_index]['press'] = True
-
-        def on_motion(event):
-            if event.inaxes != self.ax:
-                return
-            if self.__draggables__[drag_index]['press'] is False:
-                return
-            if direction[0] == 'h':
-                self.__draggables__[drag_index]['line'].set_ydata([event.ydata, event.ydata])
-                idx, index_value = min(enumerate(self.dist), key = lambda x: abs(x[1] - event.ydata))
-                self.__draggables__[drag_index]['plot'].set_ydata(self.data[idx,:])
-                self.__draggables__[drag_index]['plot'].set_label(str(index_value))
-                self.__drag_h_ax__.legend()
-                for v in self.__draggables__:
-                    v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
-                self.__drag_h_fig__.canvas.draw()
-                if self.show_image_set == True:
-                    try:
-                        self.__draggables__[drag_index]['sxm_circle'].center = (self.transformed_x_values[idx], self.transformed_y_values[idx])
-                        self.sxm_fig.fig.canvas.draw()
-                    except KeyError:
-                        pass
-            elif direction[0] == 'v':
-                self.__draggables__[drag_index]['line'].set_xdata([event.xdata, event.xdata])
-                idx, bias_value = min(enumerate(self.bias), key = lambda x: abs(x[1] - event.xdata))
-                self.__draggables__[drag_index]['plot'].set_ydata(self.data[:,idx])
-                self.__draggables__[drag_index]['plot'].set_label(str(bias_value))
-                self.__drag_v_ax__.legend()
-                for v in self.__draggables__:
-                    v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
-                self.__drag_v_fig__.canvas.draw()
-            else:
-                pass
-            self.__draggables__[drag_index]['index'] = idx
-            self.fig.canvas.draw()
-            if locator:
-                v_line.set_xdata([event.xdata, event.xdata])
-                self.__drag_h_fig__.canvas.draw()
-
-        def on_release(event):
-            for v in self.__draggables__:
-                v['plot'].axes.get_legend().get_lines()[v['count']].set_visible(True)
-                v['plot'].axes.get_legend().get_lines()[v['count']].set_picker(5)
-                self.__drag_rev_legend_map__[v['plot']] = v['plot'].axes.get_legend().get_lines()[v['count']]
-            self.__draggables__[drag_index]['press'] = False
-            self.fig.canvas.draw()
-
-        self.fig.canvas.mpl_connect('button_press_event', on_press)
-        self.fig.canvas.mpl_connect('motion_notify_event', on_motion)
-        self.fig.canvas.mpl_connect('button_release_event', on_release)
-
-        if ((direction[0] == 'h') and (self.__drag_h_count__ == 1)) or ((direction[0] == 'v') and (self.__drag_v_count__ == 1)):
-            
-            def pick_line(event):
-                legend_line = event.artist
-                for key, value in self.__drag_rev_legend_map__.items():
-                    if id(value) == id(legend_line):
-                        plot_line = key
-                visibility = not plot_line.get_visible()
-                plot_line.set_visible(visibility)
-                plot_line.figure.canvas.draw()
-            
-            p_line.figure.canvas.mpl_connect('pick_event', pick_line)
+        self.xlist = self.bias
+        self.ylist = self.dist
 
     def show_image(self, filename):
         
-        import sxm
+        try:
+            from . import sxm
+        except ImportError:
+            import sxm
 
         self.sxm_data = sxm.sxm(filename)
         self.sxm_fig = sxm.plot(self.sxm_data, 'Z (m)')
@@ -343,9 +225,20 @@ class linecut():
         self.transformed_y_values = y_values
         self.sxm_fig.ax.plot(x_values, y_values, color='k')
         self.sxm_fig.ax.set_aspect('equal')
-        for draggable in self.__draggables__:
-            if draggable['direction'] == 'h':
-                draggable['sxm_circle'] = matplotlib.patches.Circle((x_values[draggable['index']], y_values[draggable['index']]), radius = 0.5, color = draggable['color'], zorder = 10)
-                self.sxm_fig.ax.add_patch(draggable['sxm_circle'])
-
+        for bar in self.__draggables__:
+            if bar.direction[0] == 'h':
+                bar.sxm_circle = matplotlib.patches.Circle((x_values[bar.index], y_values[bar.index]), radius = 0.5, color = bar.color, zorder = 10)
+                self.sxm_fig.ax.add_patch(bar.sxm_circle)
+                bar.sxm = self
+                try:
+                    bar.sxm_dot
+                except AttributeError:
+                    bar.sxm_dot = True
+                    def slide_circle():
+                        try:
+                            bar.sxm_circle.center = (bar.sxm.transformed_x_values[bar.index], bar.sxm.transformed_y_values[bar.index])
+                            bar.sxm.sxm_fig.fig.canvas.draw() # TO DO: Blit for speed
+                        except KeyError:
+                            pass
+                    bar.functions.append(slide_circle)
         self.show_image_set = True

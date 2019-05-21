@@ -1,13 +1,16 @@
 # Interactive colorplot base class
 # Drag bar user interface in didv.colorplot
-# TO DO: change grid.linecut to use this interface
 
 import matplotlib.pyplot as plt
 
 class colorplot():
 
     def __init__(self):
-        pass
+        self.__draggables__ = []
+        self.__drag_h_count__ = 0
+        self.__drag_v_count__ = 0
+        self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        self.__drag_color_index__ = 0
 
     def xlim(self, x_min, x_max):
         self.ax.set_xlim(x_min, x_max)
@@ -27,6 +30,42 @@ class colorplot():
         c_y = c_y.T
         self.ax.contour(c_x, c_y, self.data, cmap = 'jet')
 
+    def drag_bar(self, direction = 'horizontal', locator = False, axes = None, color = None):
+
+        if direction[0] == 'h':
+            if axes is None:
+                if self.__drag_h_count__ == 0:
+                    self.__drag_h_fig__ = plt.figure()
+                    self.__drag_h_ax__ = self.__drag_h_fig__.add_subplot(111)
+                axes = self.__drag_h_ax__
+            initial_value = self.ax.get_ylim()[1] - (self.ax.get_ylim()[1] - self.ax.get_ylim()[0]) * 0.1
+            self.__drag_h_count__ += 1
+            if locator:
+                locator_axes = self.__drag_v_ax__
+            else:
+                locator_axes = None
+        elif direction[0] == 'v':
+            if axes is None:
+                if self.__drag_v_count__ == 0:
+                    self.__drag_v_fig__ = plt.figure()
+                    self.__drag_v_ax__ = self.__drag_v_fig__.add_subplot(111)
+                axes = self.__drag_v_ax__
+            initial_value = self.ax.get_xlim()[0] + (self.ax.get_xlim()[1] - self.ax.get_xlim()[0]) * 0.1
+            self.__drag_v_count__ += 1
+            if locator:
+                locator_axes = self.__drag_h_ax__
+            else:
+                locator_axes = None
+        else:
+            print('Direction must be "h" for horizontal or "v" for vertical.')
+            return
+        if color is None:
+            color = self.__color_cycle__[self.__drag_color_index__]
+            self.__drag_color_index__ += 1
+            self.__drag_color_index__ = self.__drag_color_index__ % len(self.__color_cycle__)
+
+        return drag_bar(self, direction, axes, color, initial_value, self.xlist, self.ylist, locator_axes = locator_axes)
+
 class drag_bar():
 
     def __init__(self, colorplot, direction, axes, color, initial_value, xlist, ylist, locator_axes = None):
@@ -41,6 +80,7 @@ class drag_bar():
         self.data = colorplot.data
         self.press = False
         self.linked_bars = []
+        self.functions = []
         self.fast = False
 
         self.colorplot.__draggables__.append(self)
@@ -182,6 +222,9 @@ class drag_bar():
                 self.colorplot.fig.canvas.blit(self.colorplot.fig.bbox)
             else:
                 self.colorplot.fig.canvas.draw()
+        if len(self.functions) != 0:
+            for func in self.functions:
+                func()
 
     def refresh_legend(self):
         for bar in self.colorplot.__draggables__:

@@ -8,7 +8,10 @@ import glob
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
-import interactive_colorplot
+try:
+    from . import interactive_colorplot
+except ImportError:
+    import interactive_colorplot
 
 #didv.spectra(filename) loads one Nanonis spectrum file (extension .dat) into Python
 class spectrum():
@@ -125,14 +128,10 @@ class colorplot(interactive_colorplot.colorplot):
 
     def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, axes = None, over_iv = None, multiply = None, **kwargs):
 
+        interactive_colorplot.colorplot.__init__(self)
+        
         self.channel = channel
         self.spectra_list = spectra_list
-
-        self.__draggables__ = []
-        self.__drag_h_count__ = 0
-        self.__drag_v_count__ = 0
-        self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-        self.__drag_color_index__ = 0
 
         pcolor_cm = 'RdYlBu_r'
 
@@ -147,7 +146,6 @@ class colorplot(interactive_colorplot.colorplot):
                 self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values * multiply
             if over_iv is not None:
                 self.current = pd.concat((spec.data['Current (A)'] for spec in spectra_list),axis=1).values - over_iv[0]
-            self.bias = bias
             self.bias = bias
         else:
             if (transform == 'diff') or (transform == 'derivative'):
@@ -198,43 +196,8 @@ class colorplot(interactive_colorplot.colorplot):
         if dark:
             plt.style.use('default')
 
-        interactive_colorplot.colorplot.__init__(self)
-
-    def drag_bar(self, direction = 'horizontal', locator = False, axes = None, color = None):
-
-        if direction[0] == 'h':
-            if axes is None:
-                if self.__drag_h_count__ == 0:
-                    self.__drag_h_fig__ = plt.figure()
-                    self.__drag_h_ax__ = self.__drag_h_fig__.add_subplot(111)
-                axes = self.__drag_h_ax__
-            initial_value = self.ax.get_ylim()[1] - (self.ax.get_ylim()[1] - self.ax.get_ylim()[0]) * 0.1
-            self.__drag_h_count__ += 1
-            if locator:
-                locator_axes = self.__drag_v_ax__
-            else:
-                locator_axes = None
-        elif direction[0] == 'v':
-            if axes is None:
-                if self.__drag_v_count__ == 0:
-                    self.__drag_v_fig__ = plt.figure()
-                    self.__drag_v_ax__ = self.__drag_v_fig__.add_subplot(111)
-                axes = self.__drag_v_ax__
-            initial_value = self.ax.get_xlim()[0] + (self.ax.get_xlim()[1] - self.ax.get_xlim()[0]) * 0.1
-            self.__drag_v_count__ += 1
-            if locator:
-                locator_axes = self.__drag_h_ax__
-            else:
-                locator_axes = None
-        else:
-            print('Direction must be "h" for horizontal or "v" for vertical.')
-            return
-        if color is None:
-            color = self.__color_cycle__[self.__drag_color_index__]
-            self.__drag_color_index__ += 1
-            self.__drag_color_index__ = self.__drag_color_index__ % len(self.__color_cycle__)
-
-        return interactive_colorplot.drag_bar(self, direction, axes, color, initial_value, self.bias, self.index_list, locator_axes = locator_axes)
+        self.xlist = self.bias
+        self.ylist = self.gate
 
 def batch_load(basename, file_range = None, attribute_list = None):
 
