@@ -123,7 +123,7 @@ class plot():
 
 class colorplot(interactive_colorplot.colorplot):
 
-    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, axes = None, **kwargs):
+    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, axes = None, over_iv = None, multiply = None, **kwargs):
 
         self.channel = channel
         self.spectra_list = spectra_list
@@ -141,7 +141,13 @@ class colorplot(interactive_colorplot.colorplot):
 
         bias = spectra_list[0].data.iloc[:,0].values
         if transform is None:
-            self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values
+            if multiply is  None:
+                self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values
+            else:
+                self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values * multiply
+            if over_iv is not None:
+                self.current = pd.concat((spec.data['Current (A)'] for spec in spectra_list),axis=1).values - over_iv[0]
+            self.bias = bias
             self.bias = bias
         else:
             if (transform == 'diff') or (transform == 'derivative'):
@@ -171,6 +177,9 @@ class colorplot(interactive_colorplot.colorplot):
             self.index_list = np.array(index_range)
         self.gate = self.index_list
         
+        if over_iv is not None:
+            self.data = self.data/self.current*(self.bias[:,np.newaxis] - over_iv[1])
+
         new_bias = (bias[1:] + bias[:-1]) * 0.5
         new_bias = np.insert(new_bias, 0, bias[0] - (bias[1] - bias[0]) * 0.5)
         new_index_range = (self.index_list[1:] + self.index_list[:-1]) * 0.5
