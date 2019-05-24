@@ -189,7 +189,8 @@ class colorplot(interactive_colorplot.colorplot):
         x = x.T
         y = y.T
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = pcolor_cm)
-        self.fig.colorbar(self.pcolor, ax = self.ax)
+        self.original_cmap = self.pcolor.cmap
+        self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
         self.ax.set_xlabel('Sample Bias (V)')
         self.ax.set_ylabel(index_label)
 
