@@ -126,7 +126,7 @@ class plot():
 
 class colorplot(interactive_colorplot.colorplot):
 
-    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, axes = None, over_iv = None, multiply = None, **kwargs):
+    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, axes = None, over_iv = None, multiply = None, gate_as_index = False, **kwargs):
 
         interactive_colorplot.colorplot.__init__(self)
         
@@ -145,7 +145,10 @@ class colorplot(interactive_colorplot.colorplot):
             else:
                 self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values * multiply
             if over_iv is not None:
-                self.current = pd.concat((spec.data['Current (A)'] for spec in spectra_list),axis=1).values - over_iv[0]
+                try:
+                    self.current = pd.concat((spec.data['Current (A)'] for spec in spectra_list),axis=1).values - over_iv[0]
+                except KeyError:
+                    self.current = pd.concat((spec.data['Current [AVG] (A)'] for spec in spectra_list),axis=1).values - over_iv[0]
             self.bias = bias
         else:
             if (transform == 'diff') or (transform == 'derivative'):
@@ -173,6 +176,8 @@ class colorplot(interactive_colorplot.colorplot):
             self.index_list = np.linspace(index_range[0],index_range[1],len(spectra_list))
         if len(index_range) == len(spectra_list):
             self.index_list = np.array(index_range)
+        if gate_as_index:
+            self.index_list = np.array([spec.header['Gate (V)'] for spec in spectra_list])
         self.gate = self.index_list
         
         if over_iv is not None:
