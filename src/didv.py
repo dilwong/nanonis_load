@@ -126,7 +126,7 @@ class plot():
 
 class colorplot(interactive_colorplot.colorplot):
 
-    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, axes = None, over_iv = None, multiply = None, gate_as_index = False, **kwargs):
+    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, axes = None, over_iv = None, multiply = None, gate_as_index = False, rasterized = False, **kwargs):
 
         interactive_colorplot.colorplot.__init__(self)
         
@@ -193,7 +193,7 @@ class colorplot(interactive_colorplot.colorplot):
         x, y = np.meshgrid(new_bias, new_index_range) # Will handle non-linear bias array
         x = x.T
         y = y.T
-        self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = pcolor_cm)
+        self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = pcolor_cm, rasterized = rasterized)
         self.original_cmap = self.pcolor.cmap
         self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
         self.ax.set_xlabel('Sample Bias (V)')
