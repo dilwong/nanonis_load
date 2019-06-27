@@ -43,10 +43,30 @@ class spectrum():
 
         self.data = pd.read_csv(filename, sep = '\t', header = header_lines, skip_blank_lines = False)
 
+    def to_clipboard(self):
+        self.data.to_clipboard()
+
+    def plot(self, channel = 'Input 2 (V)', label = 'gate', multiply = 1, add = 0, plot_on_previous = False, **kwargs):
+        if label == 'gate':
+            try:
+                legend_label = self.header['Gate (V)']
+            except AttributeError:
+                legend_label = None
+        else:
+            legend_label = label
+        dat = self.data.copy()
+        if multiply != 1:
+            dat[channel] = dat[channel] * multiply
+        if add != 0:
+            dat[channel] = dat[channel] + add
+        if plot_on_previous:
+            return dat.plot(x = 'Bias calc (V)', y = channel, label = legend_label, ax = plt.gca(), **kwargs)
+        return dat.plot(x = 'Bias calc (V)', y = channel, label = legend_label, **kwargs)
+
 # Plot a spectrum
 class plot():
 
-    def __init__(self, spectra, channel, names = None, use_attributes = False, start = None, increment = None, waterfall = 0.0, dark = False, gate_as_index = True):
+    def __init__(self, spectra, channel, names = None, use_attributes = False, start = None, increment = None, waterfall = 0.0, dark = False, multiply = None, gate_as_index = True):
 
         if waterfall != 0: # Does not work if spectra is a non-list iterator
             if dark:
@@ -77,12 +97,14 @@ class plot():
                 spectrum_label = str(idx)
             if ('Gate (V)' in spectrum_inst.header) and (gate_as_index):
                     spectrum_label = str(spectrum_inst.header['Gate (V)'])
+            spec_data = spectrum_inst.data.copy()
+            if multiply is not None:
+                spec_data[channel] = multiply * spec_data[channel]
             if waterfall == 0:
-                spectrum_inst.data.plot(x = spectrum_inst.data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label)
+                spec_data.plot(x = spec_data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label)
             else:
-                spec_data = spectrum_inst.data.copy()
                 spec_data[channel] = spec_data[channel] + waterfall * idx * np.sign(increment) + 0.5 * (-np.sign(increment) + 1) * waterfall * len(spectra)
-                spec_data.plot(x = spectrum_inst.data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label, color=tuple(cmap[idx]))
+                spec_data.plot(x = spec_data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label, color=tuple(cmap[idx]))
 
         #Make a legend
         box = self.ax.get_position()
@@ -345,3 +367,16 @@ def ping_remove(spectrum, n): #Removes pings from Input 2 [...] (V), if average 
     median = data.median(axis = 1)
     data[np.abs(data.sub(median,axis = 0)).gt(n*std,axis=0)] = np.nan
     spectrum.data['Input 2 (V)'] = data.mean(axis = 1)
+
+def query(spec_list, query_string):
+    
+    new_query_string = query_string.replace('gate','spec.header["Gate (V)"]')
+
+    fetched_spectra = []
+    try:
+        for spec in spec_list:
+            if eval(new_query_string, {'__builtins__': None}, {'spec': spec} ):
+                fetched_spectra.append(spec)
+    except TypeError: # What about SyntaxError?
+        print('INVALID QUERY STRING')
+    return fetched_spectra
