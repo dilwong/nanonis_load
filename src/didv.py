@@ -66,7 +66,7 @@ class spectrum():
 # Plot a spectrum
 class plot():
 
-    def __init__(self, spectra, channel, names = None, use_attributes = False, start = None, increment = None, waterfall = 0.0, dark = False, multiply = None, gate_as_index = True):
+    def __init__(self, spectra, channel = 'Input 2 (V)', names = None, use_attributes = False, start = None, increment = None, waterfall = 0.0, dark = False, multiply = None, plot_on_previous = False, gate_as_index = True):
 
         if waterfall != 0: # Does not work if spectra is a non-list iterator
             if dark:
@@ -77,8 +77,12 @@ class plot():
                 cmap = cm.get_cmap('brg')(np.linspace(0,0.6,len(spectra)))
             cmap=cmap[::-1]
 
-        self.fig = plt.figure()
-        self.ax = self.fig.add_subplot(111)
+        if plot_on_previous:
+            self.ax = plt.gca()
+            self.fig = self.ax.figure
+        else:
+            self.fig = plt.figure()
+            self.ax = self.fig.add_subplot(111)
         name_list = names
 
         if (start is not None) and (increment is not None):
