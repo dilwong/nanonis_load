@@ -107,7 +107,7 @@ class plot():
             if waterfall == 0:
                 spec_data.plot(x = spec_data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label)
             else:
-                spec_data[channel] = spec_data[channel] + waterfall * idx * np.sign(increment) + 0.5 * (-np.sign(increment) + 1) * waterfall * len(spectra)
+                spec_data[channel] = spec_data[channel] + waterfall * idx * np.sign(increment) + 0.5 * (-np.sign(increment) + 1) * waterfall * (len(spectra) - 1)
                 spec_data.plot(x = spec_data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label, color=tuple(cmap[idx]))
 
         #Make a legend
