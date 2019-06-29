@@ -66,7 +66,7 @@ class spectrum():
 # Plot a spectrum
 class plot():
 
-    def __init__(self, spectra, channel = 'Input 2 (V)', names = None, use_attributes = False, start = None, increment = None, waterfall = 0.0, dark = False, multiply = None, plot_on_previous = False, gate_as_index = True):
+    def __init__(self, spectra, channel = 'Input 2 (V)', names = None, use_attributes = False, start = None, increment = None, waterfall = 0.0, dark = False, multiply = None, plot_on_previous = False, axes = None, color = None, gate_as_index = True):
 
         if waterfall != 0: # Does not work if spectra is a non-list iterator
             if dark:
@@ -79,6 +79,9 @@ class plot():
 
         if plot_on_previous:
             self.ax = plt.gca()
+            self.fig = self.ax.figure
+        elif axes is not None:
+            self.ax = axes
             self.fig = self.ax.figure
         else:
             self.fig = plt.figure()
@@ -104,11 +107,14 @@ class plot():
             spec_data = spectrum_inst.data.copy()
             if multiply is not None:
                 spec_data[channel] = multiply * spec_data[channel]
-            if waterfall == 0:
-                spec_data.plot(x = spec_data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label)
-            else:
+            plot_args = dict(x = spec_data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label)
+            if waterfall != 0:
                 spec_data[channel] = spec_data[channel] + waterfall * idx * np.sign(increment) + 0.5 * (-np.sign(increment) + 1) * waterfall * (len(spectra) - 1)
-                spec_data.plot(x = spec_data.columns[0], y = channel, ax = self.ax, legend = False, label = spectrum_label, color=tuple(cmap[idx]))
+                if color is None:
+                    plot_args['color'] = tuple(cmap[idx])
+                else:
+                    plot_args['color'] = color
+            spec_data.plot(**plot_args)
 
         #Make a legend
         box = self.ax.get_position()
