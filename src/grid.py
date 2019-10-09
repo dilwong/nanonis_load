@@ -32,16 +32,20 @@ class nanonis_3ds():
         header_text = header_text.split('\r\n')[:-1]
         self.header = dict()
         for entry in header_text:
-            self.header[entry.split('=')[0]] = entry.split('=')[1]
+            entry_array = entry.split('=')
+            self.header[entry_array[0]] = entry_array[1]
+            if entry_array[0] == 'Comment':
+                self.header[entry_array[0]] = '='.join(entry_array[1:])
 
         temp = re.split(' |"', self.header['Grid dim'])
         self.header['x_pixels'] = int(temp[1])
         self.header['y_pixels'] = int(temp[3])
         temp = re.split(';|=', self.header['Grid settings'])
-        self.header['x_center (nm)'] = float(temp[1])*1e9
-        self.header['y_center (nm)'] = float(temp[2])*1e9
-        self.header['x_size (nm)'] = float(temp[3])*1e9
-        self.header['y_size (nm)'] = float(temp[4])*1e9
+        self.header['x_center (nm)'] = float(temp[0])*1e9
+        self.header['y_center (nm)'] = float(temp[1])*1e9
+        self.header['x_size (nm)'] = float(temp[2])*1e9
+        self.header['y_size (nm)'] = float(temp[3])*1e9
+        self.header['angle'] = float(temp[4])
         self.header["n_parameters"] = int(self.header["# Parameters (4 byte)"])
         self.header['points'] = int(self.header['Points'])
         channels = re.split('"|;',self.header['Channels'])[1:-1]
@@ -96,7 +100,7 @@ class plot():
         self.energy = nanonis_3ds.energy
 
         x_size = self.header['x_size (nm)']
-        y_size = self.header['x_size (nm)']
+        y_size = self.header['y_size (nm)']
         if fft:
             self.fig = plt.figure(figsize=[2*6.4, 4.8])
             self.ax = self.fig.add_subplot(121)
@@ -104,7 +108,7 @@ class plot():
         else:
             self.fig = plt.figure()
             self.ax = self.fig.add_subplot(111)
-        self.plot = self.ax.imshow(np.flipud(self.data[:,:,0]), extent=[0,x_size,0,y_size], cmap = 'Blues_r')
+        self.plot = self.ax.imshow(np.flipud(self.data[:,:,0]), extent=[0,x_size,0,y_size], cmap = 'Blues_r') # Check to make sure x_size and y_size aren't mixed up
         if fft:
             fft_array = np.absolute(np.fft.fft2(np.flipud(self.data[:,:,0])))
             max_fft = np.max(fft_array[1:-1,1:-1])
