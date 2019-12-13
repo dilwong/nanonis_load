@@ -1,4 +1,28 @@
-#Imports Nanonis dI/dV spectroscopy files into Python
+"""
+Imports Nanonis dI/dV spectroscopy files into Python
+
+Usage:
+
+spec = didv.spectrum(FILENAME) loads a single Bias Spectroscopy .dat file into a variable named spec
+spec.header contains ancillary information, spec.data is array of data
+
+specs = didv.batch_load(BASENAME) loads multiple Bias Spectroscopy .dat files into a list named specs
+didv.batch_load searches for all files with filename BASENAMEXXXXX.dat, where XXXXX is a five-digit number
+
+didv.plot(spectra, channel = NameOfChannel) plots sample bias vs. the channel NameOfChannel
+spectra is either a single spectrum loaded via didv.spectrum or a list of spectra loaded via didv.batch_load
+
+didv.waterfall(spectra_list, vertical_shift = NUMBER, reverse = False) makes a waterfall plot
+spectra_list is a series of either lists of didv.spectrum objects or BASENAME strings
+
+p = didv.colorplot(spectra_list) plots dI/dV(Vs, Vg)
+This defaults to channel = 'Input 2 (V)' or 'Input 2 [AVG] (V)'. Use double_lockin = True to average with 'Input 3 (V)'
+p.drag_bar(direction = 'v' or 'h', locator = False)
+
+"""
+
+# TO DO: Better docstrings
+# TO DO: Implement GUI using tkinter listbox and matplotlib.use("TkAgg")
 
 import numpy as np
 import pandas as pd
@@ -13,8 +37,11 @@ try:
 except ImportError:
     import interactive_colorplot
 
-#didv.spectra(filename) loads one Nanonis spectrum file (extension .dat) into Python
 class spectrum():
+
+    """
+    didv.spectra(filename) loads one Nanonis spectrum file (extension .dat) into Python
+    """
 
     def __init__(self, filename, attribute = None):
 
@@ -38,6 +65,7 @@ class spectrum():
                 self.header['z (nm)'] = float(self.header['Z (m)'])*1e9
             if 'Gate Voltage (V)' in self.header:
                 self.header['Gate (V)'] = float(self.header['Gate Voltage (V)'])
+                self.gate = self.header['Gate (V)']
             if attribute:
                 self.header['attribute'] = attribute
 
@@ -66,7 +94,18 @@ class spectrum():
 # Plot a spectrum
 class plot():
 
-    def __init__(self, spectra, channel = 'Input 2 (V)', names = None, use_attributes = False, start = None, increment = None, waterfall = 0.0, dark = False, multiply = None, plot_on_previous = False, axes = None, color = None, gate_as_index = True):
+    def __init__(self, spectra, channel = 'Input 2 (V)',  \
+                                names = None, \
+                                use_attributes = False, \
+                                start = None, increment = None, \
+                                waterfall = 0.0, \
+                                dark = False, \
+                                multiply = None, \
+                                plot_on_previous = False, \
+                                axes = None, \
+                                color = None, \
+                                bias_shift = 0, \
+                                gate_as_index = True):
 
         if waterfall != 0: # Does not work if spectra is a non-list iterator
             if dark:
@@ -114,6 +153,8 @@ class plot():
                     plot_args['color'] = tuple(cmap[idx])
                 else:
                     plot_args['color'] = color
+            if bias_shift != 0:
+                spec_data.iloc[:,0] -= bias_shift
             spec_data.plot(**plot_args)
 
         #Make a legend
@@ -158,37 +199,63 @@ class plot():
 
 class colorplot(interactive_colorplot.colorplot):
 
-    def __init__(self, spectra_list, channel, index_range = None, index_label = 'Gate Voltage (V)', start = None, increment = None, transform = None, diff_axis = 0, dark = False, axes = None, over_iv = None, multiply = None, gate_as_index = False, rasterized = False, **kwargs):
+    def __init__(self,  *spectra_list, \
+                        channel = None, \
+                        index_range = None, \
+                        index_label = 'Gate Voltage (V)', \
+                        start = None, increment = None, \
+                        transform = None, diff_axis = 0, \
+                        dark = False, \
+                        axes = None, \
+                        over_iv = None, \
+                        multiply = None, \
+                        gate_as_index = True, \
+                        double_lockin = False, \
+                        ping_remove = False, \
+                        bias_shift = 0, \
+                        rasterized = False, **kwargs):
 
         interactive_colorplot.colorplot.__init__(self)
+
+        self.spectra_list = parse_arguments(*spectra_list)
+        if not self.spectra_list:
+            return
         
+        if channel is None:
+            for spec in self.spectra_list:
+                spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
+                if double_lockin:
+                    spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
+                    spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
+            channel = 'Input 2 (V)'
         self.channel = channel
-        self.spectra_list = spectra_list
+        if not ping_remove:
+            std_ping_remove(spec, ping_remove)
 
         pcolor_cm = 'RdYlBu_r'
 
         if dark:
             plt.style.use('dark_background')
 
-        bias = spectra_list[0].data.iloc[:,0].values
+        bias = self.spectra_list[0].data.iloc[:,0].values - bias_shift
         if transform is None:
             if multiply is  None:
-                self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values
+                self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values
             else:
-                self.data = pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values * multiply
+                self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values * multiply
             if over_iv is not None:
                 try:
-                    self.current = pd.concat((spec.data['Current (A)'] for spec in spectra_list),axis=1).values - over_iv[0]
+                    self.current = pd.concat((spec.data['Current (A)'] for spec in self.spectra_list),axis=1).values - over_iv[0]
                 except KeyError:
-                    self.current = pd.concat((spec.data['Current [AVG] (A)'] for spec in spectra_list),axis=1).values - over_iv[0]
+                    self.current = pd.concat((spec.data['Current [AVG] (A)'] for spec in self.spectra_list),axis=1).values - over_iv[0]
             self.bias = bias
         else:
             if (transform == 'diff') or (transform == 'derivative'):
-                self.data = np.diff(pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values, axis = diff_axis)
+                self.data = np.diff(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values, axis = diff_axis)
                 self.bias = bias[:-1]
                 pcolor_cm = 'seismic'
             else:
-                self.data = transform(pd.concat((spec.data[channel] for spec in spectra_list),axis=1).values)
+                self.data = transform(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values)
                 self.bias = bias
         if axes is None:
             self.fig = plt.figure()
@@ -203,13 +270,14 @@ class colorplot(interactive_colorplot.colorplot):
                 if increment is None:
                     index_range = [start, 1000]
                 else:
-                    index_range = np.arange(len(spectra_list)) * increment + start # increment must be signed
+                    index_range = np.arange(len(self.spectra_list)) * increment + start # increment must be signed
         if len(index_range) == 2:
-            self.index_list = np.linspace(index_range[0],index_range[1],len(spectra_list))
-        if len(index_range) == len(spectra_list):
+            self.index_list = np.linspace(index_range[0],index_range[1],len(self.spectra_list))
+        if len(index_range) == len(self.spectra_list):
             self.index_list = np.array(index_range)
-        if gate_as_index:
-            self.index_list = np.array([spec.header['Gate (V)'] for spec in spectra_list])
+        if gate_as_index and (start is None) and (increment is None):
+            self.index_list = np.array([spec.gate for spec in self.spectra_list])
+            # gate_transform depreciated
         self.gate = self.index_list
         
         if over_iv is not None:
@@ -258,43 +326,29 @@ def batch_load(basename, file_range = None, attribute_list = None):
 
     return (spectrum_array, file_list)
 
-def quick_colorplot(*args, **kwargs):
+def parse_arguments(*spectra_arguments):
 
     spectra = []
-    for arg in args:
-        s, f = batch_load(arg)
-        if f == []:
-            print('WARNING: NO FILES WITH BASENAME ' + arg)
-        if ('monotonic' in kwargs) and kwargs['monotonic']:
-            if len(spectra) != 0:
-                extreme_gate = s[0].header['Gate (V)']
-                if spectra[0].header['Gate (V)'] > spectra[1].header['Gate (V)']: # Decreasing
-                    spectra = [spec for spec in spectra if spec.header['Gate (V)'] > extreme_gate]
-                elif spectra[0].header['Gate (V)'] < spectra[1].header['Gate (V)']: # Increasing
-                    spectra = [spec for spec in spectra if spec.header['Gate (V)'] < extreme_gate]
-        spectra.extend(s)
-
-    if spectra == []:
-        print('ERROR: NO FILES!')
-        return
-    if 'channel' in kwargs:
-        return colorplot(spectra, **kwargs)
-    else:
-        for spec in spectra:
-            spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
-            if 'double_lockin' in kwargs:
-                if kwargs['double_lockin'] == True:
-                    spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
-                    spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
-            if 'ping_remove' in kwargs:
-                ping_remove(spec, kwargs['ping_remove'])
-        if ('start' not in kwargs) and ('increment' not in kwargs) and ('Gate (V)' in spectra[0].header):
-            gate_range = [spec.header['Gate (V)'] for spec in spectra]
-            if 'gate_transform' in kwargs:
-                gate_range = kwargs['gate_transform'](np.array(gate_range))
-            return colorplot(spectra, channel = 'Input 2 (V)', index_range = gate_range, **kwargs)
+    for arg in spectra_arguments:
+        if type(arg) == str:
+            s, f = batch_load(arg)
+            if f == []:
+                print('WARNING: NO FILES WITH BASENAME ' + arg)
+            # monotonic keyword depreciated
+            spectra.extend(s)
+        elif type(arg) == list:
+            spectra.extend(arg) # Does not check if list contains only didv.spectrum
+        elif type(arg) == didv.spectrum:
+            spectra.append(arg)
         else:
-            return colorplot(spectra, channel = 'Input 2 (V)', **kwargs)
+            print('INCORRECT TYPE ERROR IN didv.parse_arguments')
+    if not spectra:
+        print('ERROR: NO FILES!')
+    return spectra
+
+def quick_colorplot(*args, **kwargs):
+
+    return colorplot(*args, **kwargs)
 
 class multi_colorplot():
 
@@ -368,7 +422,31 @@ class multi_colorplot():
             self.fig.canvas.draw()
             self.fast = False
 
-def ping_remove(spectrum, n): #Removes pings from Input 2 [...] (V), if average over 3 sweeps or more
+def waterfall(*spectra_list, vertical_shift = 0, reverse = False, **kwargs):
+
+    spectra = parse_arguments(*spectra_list)
+    if reverse:
+        increment = -1
+    else:
+        increment = 1
+    gate_list = np.array([spec.gate for spec in spectra])
+    if gate_list.size != np.unique(gate_list).size:
+        print('WARNING: DUPLICATE GATE VOLTAGES DETECTED')
+
+    for spec in spectra:
+        spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
+        if 'double_lockin' in kwargs:
+            if kwargs['double_lockin']:
+                spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
+                spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
+        if 'ping_remove' in kwargs:
+            std_ping_remove(spec, kwargs['ping_remove'])
+
+    w_plot = plot(spectra, waterfall = vertical_shift, increment = increment, **kwargs)
+    w_plot.spectra_list = spectra
+    return w_plot
+
+def std_ping_remove(spectrum, n): #Removes pings from Input 2 [...] (V), if average over 3 sweeps or more
     data = pd.DataFrame()
     for channel_name in spectrum.data.columns:
         if 'Input 2 [0' in channel_name:
@@ -390,3 +468,5 @@ def query(spec_list, query_string):
     except TypeError: # What about SyntaxError?
         print('INVALID QUERY STRING')
     return fetched_spectra
+
+# gui_colorplot

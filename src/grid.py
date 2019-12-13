@@ -246,3 +246,28 @@ class linecut(interactive_colorplot.colorplot):
                             pass
                     bar.functions.append(slide_circle)
         self.show_image_set = True
+
+# TO DO: Test gap map program.
+class gap_map():
+
+    def __init__(self, nanonis_3ds, channel, gap_fit_function):
+
+        self.header = nanonis_3ds.header
+        self.spec_data = nanonis_3ds.data[channel]
+        self.energy = nanonis_3ds.energy
+
+        self.x_pixels = self.header['x_pixels']
+        self.y_pixels = self.header['y_pixels']
+
+        self.gap_data = np.empty([self.x_pixels, self.y_pixels])
+        for x_pix in range(self.x_pixels):
+            for y_pix in range(self.y_pixels):
+                gap_value = gap_fit_function(self.energy, self.spec_data[x_pix, y_pix, :])
+                self.gap_data[x_pix, y_pix] = gap_value
+
+        self.fig = plt.figure()
+        self.ax = self.fig.add_subplot(111)
+        self.plot = self.ax.imshow(np.flipud(self.gap_data), extent=[0,self.header['x_size (nm)'],0,self.header['y_size (nm)']], cmap = 'inferno_r')
+        self.ax.set_xlabel('X (nm)')
+        self.ax.set_ylabel('Y (nm)')
+        self.fig.colorbar(self.plot, ax = self.ax)
