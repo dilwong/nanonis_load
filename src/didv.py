@@ -229,8 +229,9 @@ class colorplot(interactive_colorplot.colorplot):
                     spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
             channel = 'Input 2 (V)'
         self.channel = channel
-        if not ping_remove:
-            std_ping_remove(spec, ping_remove)
+        if ping_remove:
+            for spec in self.spectra_list:
+                std_ping_remove(spec, ping_remove)
 
         pcolor_cm = 'RdYlBu_r'
 
