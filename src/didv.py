@@ -105,7 +105,7 @@ class plot():
                                 axes = None, \
                                 color = None, \
                                 bias_shift = 0, \
-                                gate_as_index = True):
+                                gate_as_index = True, **kwargs):
 
         if waterfall != 0: # Does not work if spectra is a non-list iterator
             if dark:
@@ -199,28 +199,33 @@ class plot():
 
 class colorplot(interactive_colorplot.colorplot):
 
-    def __init__(self,  *spectra_list, \
-                        channel = None, \
-                        index_range = None, \
-                        index_label = 'Gate Voltage (V)', \
-                        start = None, increment = None, \
-                        transform = None, diff_axis = 0, \
-                        dark = False, \
-                        axes = None, \
-                        over_iv = None, \
-                        multiply = None, \
-                        gate_as_index = True, \
-                        double_lockin = False, \
-                        ping_remove = False, \
-                        bias_shift = 0, \
-                        rasterized = False, **kwargs):
+    "TO DO: WRITE DOCSTRING"
+
+    def __init__(self,  *spectra_list, **kwargs):
 
         interactive_colorplot.colorplot.__init__(self)
+        # Python 2 compatibility
+        channel = kwargs['channel'] if ('channel' in kwargs) else None
+        index_range = kwargs['index_range'] if ('index_range' in kwargs) else None
+        index_label = kwargs['index_label'] if ('index_label' in kwargs) else 'Gate Voltage (V)'
+        start = kwargs['start'] if ('start' in kwargs) else None
+        increment = kwargs['increment'] if ('increment' in kwargs) else None
+        transform = kwargs['transform'] if ('transform' in kwargs) else None
+        diff_axis = kwargs['diff_axis'] if ('diff_axis' in kwargs) else 0
+        dark = kwargs['dark'] if ('dark' in kwargs) else False
+        axes = kwargs['axes'] if ('axes' in kwargs) else None
+        over_iv = kwargs['over_iv'] if ('over_iv' in kwargs) else None
+        multiply = kwargs['multiply'] if ('multiply' in kwargs) else None
+        gate_as_index = kwargs['gate_as_index'] if ('gate_as_index' in kwargs) else True
+        double_lockin = kwargs['double_lockin'] if ('double_lockin' in kwargs) else False
+        ping_remove = kwargs['ping_remove'] if ('ping_remove' in kwargs) else False
+        bias_shift = kwargs['bias_shift'] if ('bias_shift' in kwargs) else 0
+        rasterized = kwargs['rasterized'] if ('rasterized' in kwargs) else False
 
         self.spectra_list = parse_arguments(*spectra_list)
         if not self.spectra_list:
             return
-        
+
         if channel is None:
             for spec in self.spectra_list:
                 spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
@@ -280,7 +285,7 @@ class colorplot(interactive_colorplot.colorplot):
             self.index_list = np.array([spec.gate for spec in self.spectra_list])
             # gate_transform depreciated
         self.gate = self.index_list
-        
+
         if over_iv is not None:
             self.data = self.data/self.current*(self.bias[:,np.newaxis] - over_iv[1])
 
@@ -368,7 +373,7 @@ class multi_colorplot():
         self.drag_ax = self.drag_fig.subplots()
 
         self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-    
+
     def add_data(self, *args, **kwargs):
 
         if self.count < self.max:
@@ -379,13 +384,13 @@ class multi_colorplot():
         else:
             print('No more data can be added to the figure!')
             return
-            
+
         if len(self.colorplots) == self.max:
             self.drag_bars[0].join_drag_bars(*self.drag_bars[1:])
-    
+
     def fix_layout(self):
         self.fig.tight_layout()
-    
+
     def clim(self, c_min, c_max):
         for cplot in self.colorplots:
             cplot.clim(c_min, c_max)
@@ -414,7 +419,7 @@ class multi_colorplot():
                 bar.colorplot.ax.draw_artist(bar.colorplot_line)
             self.fig.canvas.blit(self.fig.bbox)
             self.fast = True
-    
+
     def stop_fast(self):
         if self.fast:
             for bar in self.drag_bars:
@@ -423,7 +428,18 @@ class multi_colorplot():
             self.fig.canvas.draw()
             self.fast = False
 
-def waterfall(*spectra_list, vertical_shift = 0, reverse = False, **kwargs):
+def waterfall(*spectra_list, **kwargs):
+
+    "TO DO: WRITE DOCSTRING"
+
+    if 'vertical_shift' in kwargs:
+        vertical_shift = kwargs['vertical_shift']
+    else:
+        vertical_shift = 0
+    if 'reverse' in kwargs:
+        reverse = kwargs['reverse']
+    else:
+        reverse = False
 
     spectra = parse_arguments(*spectra_list)
     if reverse:
@@ -458,7 +474,7 @@ def std_ping_remove(spectrum, n): #Removes pings from Input 2 [...] (V), if aver
     spectrum.data['Input 2 (V)'] = data.mean(axis = 1)
 
 def query(spec_list, query_string):
-    
+
     new_query_string = query_string.replace('gate','spec.header["Gate (V)"]')
 
     fetched_spectra = []

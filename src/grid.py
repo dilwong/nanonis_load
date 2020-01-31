@@ -98,6 +98,9 @@ class plot():
         self.header = nanonis_3ds.header
         self.data = nanonis_3ds.data[channel]
         self.energy = nanonis_3ds.energy
+        self.channel = channel
+        self.press = None
+        self.click = None
 
         x_size = self.header['x_size (nm)']
         y_size = self.header['y_size (nm)']
@@ -112,15 +115,17 @@ class plot():
         if fft:
             fft_array = np.absolute(np.fft.fft2(np.flipud(self.data[:,:,0])))
             max_fft = np.max(fft_array[1:-1,1:-1])
-            fft_array = np.fft.fftshift(fft_array)
+            fft_array = np.fliplr(np.fft.fftshift(fft_array))  # Is this the correct orientation?
             fft_x = -np.pi/x_size
             fft_y = np.pi/y_size
             self.fft_plot = self.fft_ax.imshow(fft_array, extent=[fft_x, -fft_x, -fft_y, fft_y], origin='lower')
-            self.fig.colorbar(self.fft_plot, ax = self.fft_ax)
+            self.fft_colorbar = self.fig.colorbar(self.fft_plot, ax = self.fft_ax)
             self.fft_clim(0,max_fft)
+        else:
+            self.fft_plot = None
         self.ax.set_xlabel('X (nm)')
         self.ax.set_ylabel('Y (nm)')
-        self.fig.colorbar(self.plot, ax = self.ax)
+        self.colorbar = self.fig.colorbar(self.plot, ax = self.ax)
         self.free = 0
         title = 'Energy = ' + str(self.energy[self.free]) + ' eV'
         self.ax.set_title(title)
@@ -130,9 +135,9 @@ class plot():
                 key=event.key[4:]
             else:
                 key=event.key
-            if key == 'up':
+            if key == 'down':
                 self.free -= 1
-            elif key == 'down':
+            elif key == 'up':
                 self.free += 1
             if self.free < 0:
                 self.free = len(self.energy)-1
@@ -141,14 +146,48 @@ class plot():
             self.plot.set_data(np.flipud(self.data[:,:,self.free]))
             if fft:
                 fft_array = np.absolute(np.fft.fft2(np.flipud(self.data[:,:,self.free])))
-                fft_array = np.fft.fftshift(fft_array)
+                fft_array = np.fliplr(np.fft.fftshift(fft_array)) # Is this the correct orientation?
                 self.fft_plot.set_data(fft_array)
             title='Energy = ' + str(self.energy[self.free]) + ' eV'
             self.ax.set_title(title)
             self.fig.canvas.draw()
+        def on_press(event):
+            if event.inaxes == self.colorbar.ax:
+                self.press = (event.x, event.y, self.colorbar, self.plot)
+            elif (self.fft_plot is not None) and (event.inaxes == self.fft_colorbar.ax):
+                self.press = (event.x, event.y, self.fft_colorbar, self.fft_plot)
+            elif event.inaxes == self.ax:
+                self.click = (event.xdata, event.ydata)
+            else:
+                return
+        def on_motion(event):
+            if self.press is None:
+                return
+            colorbar = self.press[2]
+            if event.inaxes != colorbar.ax:
+                return
+            dx = event.x - self.press[0]
+            dy = event.y - self.press[1]
+            self.press = (event.x, event.y, colorbar, self.press[3])
+            scale = colorbar.norm.vmax - colorbar.norm.vmin
+            perc = 0.05
+            if event.button == 1:
+                colorbar.norm.vmin -= (perc * scale) * np.sign(dy)
+                colorbar.norm.vmax -= (perc * scale) * np.sign(dy)
+            elif event.button == 3:
+                colorbar.norm.vmin -= (perc* scale) * np.sign(dy)
+                colorbar.norm.vmax += (perc * scale) *np.sign(dy)
+            colorbar.draw_all()
+            self.press[3].set_norm(colorbar.norm)
+            colorbar.patch.figure.canvas.draw()
+        def on_release(event):
+            self.press = None
 
         self.key_press = key_press
         self.fig.canvas.mpl_connect('key_press_event',key_press)
+        self.fig.canvas.mpl_connect('button_press_event',on_press)
+        self.fig.canvas.mpl_connect('motion_notify_event',on_motion)
+        self.fig.canvas.mpl_connect('button_release_event',on_release)
 
     def clim(self, c_min, c_max):
         self.plot.set_clim(c_min, c_max)
@@ -161,6 +200,27 @@ class plot():
 
     def fft_colormap(self, cmap):
         self.fft_plot.set_cmap(cmap)
+
+    def show_spectra(self, channel = None, ax = None):
+
+        if self.click is None:
+            return
+        x_pixel = int(np.floor(self.click[0] * self.header['x_pixels'] / self.header['x_size (nm)']))
+        y_pixel = int(np.floor(self.click[1] * self.header['y_pixels'] / self.header['y_size (nm)']))
+        if ax is None:
+            fig = plt.figure()
+            ax = fig.add_subplot(111)
+        ax.plot(self.energy, self.data[y_pixel, x_pixel, :])
+
+        # TO DO: test this
+        theta = -np.radians(self.header['angle'])
+        R = np.array(((np.cos(theta), -np.sin(theta)), (np.sin(theta), np.cos(theta))))
+        xy_vec = (self.click[0] - self.header['x_size (nm)'] *  0.5, self.click[1] - self.header['y_size (nm)'] * 0.5)
+        transformed_vec = R.dot(xy_vec)
+        transformed_x = transformed_vec[0] + self.header['x_center (nm)']
+        transformed_y = transformed_vec[1] + self.header['y_center (nm)']
+        print('x = ' + str(transformed_x) + ' nm')
+        print('y = ' + str(transformed_y) + ' nm')
 
 #Loads and plots 3DS line cuts
 class linecut(interactive_colorplot.colorplot):
@@ -205,7 +265,7 @@ class linecut(interactive_colorplot.colorplot):
         self.ylist = self.dist
 
     def show_image(self, filename):
-        
+
         try:
             from . import sxm
         except ImportError:
@@ -246,6 +306,14 @@ class linecut(interactive_colorplot.colorplot):
                             pass
                     bar.functions.append(slide_circle)
         self.show_image_set = True
+
+def quick_plot(filename, **kwargs):
+
+    loaded_data = nanonis_3ds(filename)
+    try:
+        return plot(loaded_data, channel='Input 2 (V)', **kwargs)
+    except KeyError:
+        return plot(loaded_data, channel='Input 2 [AVG] (V)', **kwargs)
 
 # TO DO: Test gap map program.
 class gap_map():
