@@ -201,7 +201,7 @@ class colorplot(interactive_colorplot.colorplot):
 
     "TO DO: WRITE DOCSTRING"
 
-    def __init__(self,  *spectra_list, **kwargs):
+    def __init__(self, *spectra_list, **kwargs):
 
         interactive_colorplot.colorplot.__init__(self)
         # Python 2 compatibility
@@ -222,6 +222,10 @@ class colorplot(interactive_colorplot.colorplot):
         bias_shift = kwargs['bias_shift'] if ('bias_shift' in kwargs) else 0
         rasterized = kwargs['rasterized'] if ('rasterized' in kwargs) else False
 
+        self.arg_list = spectra_list
+        self.state_for_update = {}
+        self.terminate = False
+
         self.spectra_list = parse_arguments(*spectra_list)
         if not self.spectra_list:
             return
@@ -232,9 +236,11 @@ class colorplot(interactive_colorplot.colorplot):
                 if double_lockin:
                     spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
                     spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
+                    self.state_for_update['double_lockin'] = True
             channel = 'Input 2 (V)'
         self.channel = channel
         if ping_remove:
+            self.state_for_update['ping_remove'] = True
             for spec in self.spectra_list:
                 std_ping_remove(spec, ping_remove)
 
@@ -245,7 +251,7 @@ class colorplot(interactive_colorplot.colorplot):
 
         bias = self.spectra_list[0].data.iloc[:,0].values - bias_shift
         if transform is None:
-            if multiply is  None:
+            if multiply is None:
                 self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values
             else:
                 self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values * multiply
@@ -310,6 +316,66 @@ class colorplot(interactive_colorplot.colorplot):
 
         self.xlist = self.bias
         self.ylist = self.gate
+
+    def update(self):
+
+        self.spectra_list = parse_arguments(*self.arg_list)
+
+        # Only works for Input 2 (V) or similar types of data
+        for spec in self.spectra_list:
+            spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
+            if 'double_lockin' in self.state_for_update:
+                spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
+                spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
+        if 'ping_remove' in self.state_for_update:
+            for spec in self.spectra_list:
+                std_ping_remove(spec, ping_remove)
+        bias = self.spectra_list[0].data.iloc[:,0].values # No bias_shift
+        self.index_list = np.array([spec.gate for spec in self.spectra_list])
+        new_bias = (bias[1:] + bias[:-1]) * 0.5
+        new_bias = np.insert(new_bias, 0, bias[0] - (bias[1] - bias[0]) * 0.5)
+        new_index_range = (self.index_list[1:] + self.index_list[:-1]) * 0.5
+        new_index_range = np.insert(new_index_range, 0, self.index_list[0] - (self.index_list[1] - self.index_list[0]) * 0.5)
+        new_bias = np.append(new_bias, bias[-1] + (bias[-1] - bias[-2]) * 0.5)
+        new_index_range = np.append(new_index_range, self.index_list[-1] + (self.index_list[-1] - self.index_list[-2]) * 0.5)
+        x, y = np.meshgrid(new_bias, new_index_range) # Will handle non-linear bias array
+        x = x.T
+        y = y.T
+        cmap = self.pcolor.cmap
+        clim_min, clim_max = self.pcolor.get_clim()
+        self.bias = bias
+        self.gate = self.index_list
+        self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values  # No transform, multiply, over_iv
+        self.colorbar.remove()
+        self.pcolor.remove()
+        self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = cmap)
+        self.clim(clim_min, clim_max)
+        self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
+        self.xlist = self.bias
+        self.ylist = self.gate
+        for dragbar in self.__draggables__:
+            dragbar.update_data()
+        self.fig.canvas.draw()
+
+    def update_loop(self, wait_time):
+
+        import time
+        while not self.terminate:
+            time.sleep(wait_time)
+            self.update()
+    
+    def refresh(self, wait_time = 5):
+
+        try:
+            import thread
+        except ModuleNotFoundError:
+            import _thread as thread
+
+        def handle_close(event):
+            self.terminate = True
+        self.fig.canvas.mpl_connect('close_event', handle_close)
+
+        thread.start_new_thread(self.update_loop, (wait_time, ))
 
 def batch_load(basename, file_range = None, attribute_list = None):
 

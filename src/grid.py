@@ -213,9 +213,11 @@ class plot():
         ax.plot(self.energy, self.data[y_pixel, x_pixel, :])
 
         # TO DO: test this
+        x = (x_pixel + 0.5) * self.header['x_size (nm)'] / self.header['x_pixels']
+        y = (y_pixel + 0.5) * self.header['y_size (nm)'] / self.header['x_pixels']
         theta = -np.radians(self.header['angle'])
         R = np.array(((np.cos(theta), -np.sin(theta)), (np.sin(theta), np.cos(theta))))
-        xy_vec = (self.click[0] - self.header['x_size (nm)'] *  0.5, self.click[1] - self.header['y_size (nm)'] * 0.5)
+        xy_vec = (x - self.header['x_size (nm)'] *  0.5, y - self.header['y_size (nm)'] * 0.5)
         transformed_vec = R.dot(xy_vec)
         transformed_x = transformed_vec[0] + self.header['x_center (nm)']
         transformed_y = transformed_vec[1] + self.header['y_center (nm)']

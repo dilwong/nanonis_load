@@ -175,6 +175,8 @@ class drag_bar():
         self.linked_bars = []
         self.functions = []
         self.fast = False
+        self.waiting = False
+        self.updated = False
 
         self.colorplot.__draggables__.append(self)
 
@@ -211,6 +213,8 @@ class drag_bar():
         self.refresh_legend()
 
         def on_press(event):
+            if self.waiting:
+                return
             if event.inaxes != self.colorplot.ax:
                 return
             contains, _ = self.colorplot_line.contains(event)
@@ -220,6 +224,8 @@ class drag_bar():
             self.colorplot.fig.active_drag_bar = self
 
         def on_motion(event):
+            if self.waiting:
+                return
             if event.inaxes != self.colorplot.ax:
                 return
             if self.press is False:
@@ -230,6 +236,8 @@ class drag_bar():
                 self.move_to(value = event.xdata)
 
         def on_release(event):
+            if self.waiting:
+                return
             self.refresh_legend()
             self.press = False
             if not self.fast:
@@ -289,6 +297,9 @@ class drag_bar():
             set_data_function = self.colorplot_line.set_xdata
         set_data_function([self.index_value, self.index_value])
         self.slice_dict[self.slice_const] = self.index
+        if self.updated:
+            self.updated = False
+            self.plot.set_xdata(self.indep_list)
         self.plot.set_ydata(self.data[self.slice_dict['left'],self.slice_dict['right']])
         self.plot.set_label(str(self.index_value))
         if (len(self.linked_bars) == 0) and (not skip_draw):
@@ -332,6 +343,22 @@ class drag_bar():
 
     def to_clipboard(self):
         pd.DataFrame([self.indep_list, self.data[self.slice_dict['left'],self.slice_dict['right']]]).transpose().to_clipboard(index=False, header =False)
+
+    def update_data(self):
+        while self.press:
+            pass
+        self.waiting = True
+        self.xlist = self.colorplot.xlist
+        self.ylist = self.colorplot.ylist
+        self.data = self.colorplot.data
+        if self.direction[0] == 'h':
+            self.tune_list = self.ylist
+            self.indep_list = self.xlist
+        elif self.direction[0] == 'v':
+            self.tune_list = self.xlist
+            self.indep_list = self.ylist
+        self.updated = True
+        self.waiting = False
 
 class colorbar_rectangle():
 
