@@ -221,10 +221,12 @@ class colorplot(interactive_colorplot.colorplot):
         ping_remove = kwargs['ping_remove'] if ('ping_remove' in kwargs) else False
         bias_shift = kwargs['bias_shift'] if ('bias_shift' in kwargs) else 0
         rasterized = kwargs['rasterized'] if ('rasterized' in kwargs) else False
+        colorbar = kwargs['colorbar'] if ('colorbar' in kwargs) else True
 
         self.arg_list = spectra_list
         self.state_for_update = {}
         self.terminate = False
+        self.initial_kwarg_state = kwargs
 
         self.spectra_list = parse_arguments(*spectra_list)
         if not self.spectra_list:
@@ -307,7 +309,8 @@ class colorplot(interactive_colorplot.colorplot):
         y = y.T
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = pcolor_cm, rasterized = rasterized)
         self.original_cmap = self.pcolor.cmap
-        self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
+        if colorbar:
+            self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
         self.ax.set_xlabel('Sample Bias (V)')
         self.ax.set_ylabel(index_label)
 
@@ -346,11 +349,14 @@ class colorplot(interactive_colorplot.colorplot):
         self.bias = bias
         self.gate = self.index_list
         self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values  # No transform, multiply, over_iv
-        self.colorbar.remove()
+        colorbar = self.initial_kwarg_state['colorbar'] if ('colorbar' in self.initial_kwarg_state) else True
+        if colorbar:
+            self.colorbar.remove()
         self.pcolor.remove()
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = cmap)
         self.clim(clim_min, clim_max)
-        self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
+        if colorbar:
+            self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
         self.xlist = self.bias
         self.ylist = self.gate
         for dragbar in self.__draggables__:
