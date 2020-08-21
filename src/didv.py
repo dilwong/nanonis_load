@@ -386,7 +386,7 @@ class colorplot(interactive_colorplot.colorplot):
 def batch_load(basename, file_range = None, attribute_list = None):
 
     if file_range is None:
-        file_range = range(1000)
+        file_range = range(9999)
 
     file_string = basename + '*.dat'
     file_exist = glob.glob(file_string)
