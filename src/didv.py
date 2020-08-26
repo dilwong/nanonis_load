@@ -369,7 +369,7 @@ class colorplot(interactive_colorplot.colorplot):
         while not self.terminate:
             time.sleep(wait_time)
             self.update()
-    
+
     def refresh(self, wait_time = 5):
 
         try:
@@ -558,4 +558,150 @@ def query(spec_list, query_string):
         print('INVALID QUERY STRING')
     return fetched_spectra
 
-# gui_colorplot
+def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, channel = None, double_lockin = None, ping_remove = None, cmap = None):
+
+    if axes == None:
+        fig = plt.figure()
+        axes = fig.add_subplot(111)
+    if cmap is None:
+        cmap = 'RdYlBu_r'
+
+    bias_list = spectra_list[0].data['Bias calc (V)'] # Assumes all spectra have same bias list
+    bias_index = min(range(len(bias_list)), key = lambda bidx: abs(bias_list[bidx] - bias))
+    #print(bias_index)
+    #print(bias_list[bias_index])
+
+    if channel is None:
+        # for spec in spectra_list:
+        #     spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
+        # if double_lockin:
+        #     spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
+        #     spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
+        channel = 'Input 2 (V)'
+    # if ping_remove:
+    #     print('WARNING: PING_REMOVE ALTERS THE DATA IN SPECTRA_LIST!')
+    #     for spec in spectra_list:
+    #         std_ping_remove(spec, ping_remove)
+
+    gate = []
+    data = []
+    for spec in spectra_list:
+        gate.append(spec.gate)
+        data.append(spec.data[channel][bias_index])
+    gate = np.array(gate)
+    data = np.array(data)
+    data = np.reshape(data, (len(data), 1))
+
+    new_gate = (gate[1:] + gate[:-1]) * 0.5
+    new_gate = np.insert(new_gate, 0, gate[0] - (gate[1] - gate[0]) * 0.5)
+    new_gate = np.append(new_gate, gate[-1] + (gate[-1] - gate[-2]) * 0.5)
+    bounds = np.array([lower_bound, upper_bound])
+    x, y = np.meshgrid(new_gate, bounds)
+    x = x.T
+    y = y.T
+
+    return axes.pcolormesh(x, y, data, cmap = cmap)
+
+# TO DO: Implement add_data
+class landau_fan(interactive_colorplot.colorplot):
+
+    "TO DO: WRITE DOCSTRING"
+
+    def __init__(self, filename):
+
+        # TO DO: Implement drag_bar
+        interactive_colorplot.colorplot.__init__(self)
+
+        self.magnet = []
+        self.clow = []
+        self.chigh = []
+        self.spectra_list = []
+        #self.pra = []
+        with open(filename, 'r') as f:
+            for fline in f:
+                field_line = fline.split()
+                self.magnet.append(float(field_line[0]))
+                try:
+                    self.clow.append(float(field_line[1]))
+                except ValueError:
+                    self.clow.append(None)
+                try:
+                    self.chigh.append(float(field_line[2]))
+                except ValueError:
+                    self.chigh.append(None)
+                self.spectra_list.append(parse_arguments(*field_line[3:]))
+                #self.pra.append(None)
+
+        self.num_fields = len(self.spectra_list)
+
+        for spectra in self.spectra_list:
+            for spec in spectra:
+                spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
+            # if double_lockin:
+            #     spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
+            #     spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
+
+    def get_index_for_B(self, B):
+        nearest_B_index, nearest_B = min(enumerate(self.magnet), key = lambda x: abs(x[1] - B))
+        return nearest_B_index
+
+    # def set_ping_remove(self, ping_remove_array):
+    #     if len(ping_remove_array) == self.num_fields:
+    #         self.pra = ping_remove_array
+    #     else:
+    #         print('ERROR: PING_REMOVE_ARRAY NOT CORRECT LENGTH')
+
+    def ping_remove_for_B(self, ping_remove, B):
+        nearest_B_index = self.get_index_for_B(B)
+        print('WARNING: PING_REMOVE ALTERS THE DATA IN SPECTRA_LIST!')
+        for spec in self.spectra_list[nearest_B_index]:
+            std_ping_remove(spec, ping_remove)
+
+    def plot(self, bias, cmap = None, center = False):
+
+        if cmap is None:
+            cmap = 'RdYlBu_r'
+
+        self.fig = plt.figure()
+        self.ax = self.fig.add_subplot(111)
+        self.bias = bias
+        self.cond_lines = []
+
+        for idx in range(self.num_fields):
+            field_value = self.magnet[idx]
+            if self.num_fields == 1:
+                lower_bound = field_value - 0.5
+                upper_bound = field_value + 0.5
+            else:
+                try:
+                    smaller_fvalue = max([val for val in self.magnet if val < field_value])
+                    lower_bound = (smaller_fvalue + field_value) * 0.5
+                except ValueError:
+                    larger_fvalue = min([val for val in self.magnet if val > field_value])
+                    lower_bound = field_value - (larger_fvalue - field_value) * 0.5
+                try:
+                    larger_fvalue = min([val for val in self.magnet if val > field_value])
+                    upper_bound = (larger_fvalue + field_value) * 0.5
+                except ValueError:
+                    smaller_fvalue = max([val for val in self.magnet if val < field_value])
+                    upper_bound = field_value + (field_value - smaller_fvalue) * 0.5
+            if center:
+                even_bound = min([upper_bound - field_value, field_value - lower_bound])
+                upper_bound = field_value + even_bound
+                lower_bound = field_value - even_bound
+            #fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, ping_remove = self.pra[idx], cmap = cmap)
+            fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, cmap = cmap)
+            self.cond_lines.append(fbplot)
+            if self.chigh[idx] is not None:
+                if self.clow[idx] is not None:
+                    fbplot.set_clim(self.clow[idx], self.chigh[idx])
+                else:
+                    fbplot.set_clim(0, self.chigh[idx])
+
+    def clim_for_B(self, c_min, c_max, B):
+        nearest_B_index = self.get_index_for_B(B)
+        self.cond_lines[nearest_B_index].set_clim(c_min, c_max)
+
+    def get_clim_for_B(self, B):
+        nearest_B_index = self.get_index_for_B(B)
+        return self.cond_lines[nearest_B_index].get_clim()
