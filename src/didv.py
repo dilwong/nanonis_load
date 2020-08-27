@@ -558,7 +558,9 @@ def query(spec_list, query_string):
         print('INVALID QUERY STRING')
     return fetched_spectra
 
-def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, channel = None, double_lockin = None, ping_remove = None, cmap = None):
+# TO DO: Waterfall plots would be simpler to generate if fixed_bias_plot and fixed_gate_plot
+#        saved a copy of the data in the landau_fan or butterfly instance
+def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, channel = None, cmap = None, shift_gate = 0, flip_bias = False):
 
     if axes == None:
         fig = plt.figure()
@@ -567,9 +569,20 @@ def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, c
         cmap = 'RdYlBu_r'
 
     bias_list = spectra_list[0].data['Bias calc (V)'] # Assumes all spectra have same bias list
-    bias_index = min(range(len(bias_list)), key = lambda bidx: abs(bias_list[bidx] - bias))
-    #print(bias_index)
-    #print(bias_list[bias_index])
+    try:
+        left_bias = bias[0]
+        right_bias = bias[1]
+        left_bias_index = min(range(len(bias_list)), key = lambda bidx: abs(bias_list[bidx] - left_bias))
+        right_bias_index = min(range(len(bias_list)), key = lambda bidx: abs(bias_list[bidx] - right_bias))
+        if right_bias_index > left_bias_index:
+            nbiases = right_bias_index - left_bias_index + 1
+        else:
+            nbiases = left_bias_index - right_bias_index + 1
+    except TypeError:
+        bias_index = min(range(len(bias_list)), key = lambda bidx: abs(bias_list[bidx] - bias))
+        nbiases = 1
+        #print(bias_index)
+        #print(bias_list[bias_index])
 
     if channel is None:
         # for spec in spectra_list:
@@ -587,30 +600,86 @@ def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, c
     data = []
     for spec in spectra_list:
         gate.append(spec.gate)
-        data.append(spec.data[channel][bias_index])
-    gate = np.array(gate)
+        if nbiases == 1:
+            data.append(spec.data[channel][bias_index])
+        else:
+            if right_bias_index > left_bias_index:
+                data.append(spec.data[channel][left_bias_index:right_bias_index+1])
+            else:
+                data.append(spec.data[channel][right_bias_index:left_bias_index+1])
+    gate = np.array(gate) + shift_gate
     data = np.array(data)
-    data = np.reshape(data, (len(data), 1))
+    data = np.reshape(data, (len(data), nbiases))
 
     new_gate = (gate[1:] + gate[:-1]) * 0.5
     new_gate = np.insert(new_gate, 0, gate[0] - (gate[1] - gate[0]) * 0.5)
     new_gate = np.append(new_gate, gate[-1] + (gate[-1] - gate[-2]) * 0.5)
-    bounds = np.array([lower_bound, upper_bound])
+    bounds = np.linspace(lower_bound, upper_bound, nbiases + 1)
+    if flip_bias:
+        bounds = np.linspace(upper_bound, lower_bound, nbiases + 1)
     x, y = np.meshgrid(new_gate, bounds)
     x = x.T
     y = y.T
 
     return axes.pcolormesh(x, y, data, cmap = cmap)
 
+def fixed_gate_plot(spectra_list, gate, lower_bound, upper_bound, axes = None, channel = None, cmap = None):
+
+    if axes == None:
+        fig = plt.figure()
+        axes = fig.add_subplot(111)
+    if cmap is None:
+        cmap = 'RdYlBu_r'
+
+    bias = np.array(spectra_list[0].data['Bias calc (V)'])
+    try:
+        left_gate = gate[0]
+        right_gate = gate[1]
+        if left_gate < right_gate:
+            spectra = query(spectra_list, str(left_gate) + '<= gate <= ' + str(right_gate))
+        else:
+            spectra = query(spectra_list, str(right_gate) + '<= gate <= ' + str(left_gate))
+    except TypeError:
+        spectra = query(spectra_list, 'gate == ' + str(gate))
+    ngates = len(spectra)
+    if ngates == 0:
+        print("ERROR: GATE NOT FOUND. FIXED_GATE_PLOT DOES NOT LOOK FOR NEAREST GATE")
+        print("SKIPPING...")
+        return None
+
+    if channel is None:
+        channel = 'Input 2 (V)'
+
+    data = []
+    gate = []
+    for spec in spectra:
+        data.append(spec.data[channel])
+        gate.append(spec.gate)
+    gate, _, data = zip(*sorted(zip(gate, range(len(gate)), data)))
+    data = np.array(data)
+    data = np.reshape(data, (ngates, len(bias)))
+    data = data.T
+
+    new_bias = (bias[1:] + bias[:-1]) * 0.5
+    new_bias = np.insert(new_bias, 0, bias[0] - (bias[1] - bias[0]) * 0.5)
+    new_bias = np.append(new_bias, bias[-1] + (bias[-1] - bias[-2]) * 0.5)
+    bounds = np.linspace(lower_bound, upper_bound, ngates + 1)
+    x, y = np.meshgrid(new_bias, bounds)
+    x = x.T
+    y = y.T
+
+    return axes.pcolormesh(x, y, data, cmap = cmap)
+
 # TO DO: Implement add_data
-class landau_fan(interactive_colorplot.colorplot):
+#class landau_fan(interactive_colorplot.colorplot):
+class landau_fan():
 
     "TO DO: WRITE DOCSTRING"
 
     def __init__(self, filename):
 
         # TO DO: Implement drag_bar
-        interactive_colorplot.colorplot.__init__(self)
+        #interactive_colorplot.colorplot.__init__(self)
 
         self.magnet = []
         self.clow = []
@@ -620,7 +689,10 @@ class landau_fan(interactive_colorplot.colorplot):
         with open(filename, 'r') as f:
             for fline in f:
                 field_line = fline.split()
-                self.magnet.append(float(field_line[0]))
+                try:
+                    self.magnet.append(float(field_line[0]))
+                except ValueError:
+                    continue
                 try:
                     self.clow.append(float(field_line[1]))
                 except ValueError:
@@ -633,6 +705,7 @@ class landau_fan(interactive_colorplot.colorplot):
                 #self.pra.append(None)
 
         self.num_fields = len(self.spectra_list)
+        self.__shift_gate__ = np.zeros(self.num_fields)
 
         for spectra in self.spectra_list:
             for spec in spectra:
@@ -657,7 +730,7 @@ class landau_fan(interactive_colorplot.colorplot):
         for spec in self.spectra_list[nearest_B_index]:
             std_ping_remove(spec, ping_remove)
 
-    def plot(self, bias, cmap = None, center = False):
+    def plot(self, bias, cmap = None, center = False, width = None, flip_bias = False):
 
         if cmap is None:
             cmap = 'RdYlBu_r'
@@ -669,28 +742,32 @@ class landau_fan(interactive_colorplot.colorplot):
 
         for idx in range(self.num_fields):
             field_value = self.magnet[idx]
-            if self.num_fields == 1:
-                lower_bound = field_value - 0.5
-                upper_bound = field_value + 0.5
+            if width is None:
+                if self.num_fields == 1:
+                    lower_bound = field_value - 0.5
+                    upper_bound = field_value + 0.5
+                else:
+                    try:
+                        smaller_fvalue = max([val for val in self.magnet if val < field_value])
+                        lower_bound = (smaller_fvalue + field_value) * 0.5
+                    except ValueError:
+                        larger_fvalue = min([val for val in self.magnet if val > field_value])
+                        lower_bound = field_value - (larger_fvalue - field_value) * 0.5
+                    try:
+                        larger_fvalue = min([val for val in self.magnet if val > field_value])
+                        upper_bound = (larger_fvalue + field_value) * 0.5
+                    except ValueError:
+                        smaller_fvalue = max([val for val in self.magnet if val < field_value])
+                        upper_bound = field_value + (field_value - smaller_fvalue) * 0.5
+                if center:
+                    even_bound = min([upper_bound - field_value, field_value - lower_bound])
+                    upper_bound = field_value + even_bound
+                    lower_bound = field_value - even_bound
             else:
-                try:
-                    smaller_fvalue = max([val for val in self.magnet if val < field_value])
-                    lower_bound = (smaller_fvalue + field_value) * 0.5
-                except ValueError:
-                    larger_fvalue = min([val for val in self.magnet if val > field_value])
-                    lower_bound = field_value - (larger_fvalue - field_value) * 0.5
-                try:
-                    larger_fvalue = min([val for val in self.magnet if val > field_value])
-                    upper_bound = (larger_fvalue + field_value) * 0.5
-                except ValueError:
-                    smaller_fvalue = max([val for val in self.magnet if val < field_value])
-                    upper_bound = field_value + (field_value - smaller_fvalue) * 0.5
-            if center:
-                even_bound = min([upper_bound - field_value, field_value - lower_bound])
-                upper_bound = field_value + even_bound
-                lower_bound = field_value - even_bound
+                lower_bound = field_value - width
+                upper_bound = field_value + width
             #fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, ping_remove = self.pra[idx], cmap = cmap)
-            fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, cmap = cmap)
+            fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, cmap = cmap, shift_gate = self.__shift_gate__[idx], flip_bias = flip_bias)
             self.cond_lines.append(fbplot)
             if self.chigh[idx] is not None:
                 if self.clow[idx] is not None:
@@ -705,3 +782,141 @@ class landau_fan(interactive_colorplot.colorplot):
     def get_clim_for_B(self, B):
         nearest_B_index = self.get_index_for_B(B)
         return self.cond_lines[nearest_B_index].get_clim()
+
+    def add_gate_for_B(self, gate_shift, B):
+        nearest_B_index = self.get_index_for_B(B)
+        self.__shift_gate__[nearest_B_index] += gate_shift
+
+    def reset_gate_shift(self):
+        self.__shift_gate__ = np.zeros(self.num_fields)
+
+    def butterfly(self, gate, cmap = None, center = False, width = None):
+
+        return butterfly(self, gate, cmap = cmap, center = center, width = width)
+
+    def waterfall(self, vertical_shift):
+
+        self.__waterfall_fig__ = plt.figure()
+        self.__waterfall_ax__ = self.__waterfall_fig__.add_subplot(111)
+
+        sorted_fields = sorted(self.magnet)
+        for nth in range(self.num_fields):
+            
+            nth_field = sorted_fields[nth]
+            idx = self.magnet.index(nth_field)
+
+            bias_list = self.spectra_list[idx][0].data['Bias calc (V)'] # Assumes all spectra have same bias list
+            bias_index = min(range(len(bias_list)), key = lambda bidx: abs(bias_list[bidx] - self.bias))
+
+            gate = []
+            data = []
+            clow, chigh = self.cond_lines[idx].get_clim()
+            for spec in self.spectra_list[idx]:
+                gate.append(spec.gate)
+                data.append(spec.data['Input 2 (V)'][bias_index])
+            gate = np.array(gate) + self.__shift_gate__[idx]
+            data = np.array(data)/(chigh - clow) - clow + nth_field * vertical_shift
+
+            wat_line = self.__waterfall_ax__.plot(gate, data)
+
+    # TO DO: Complete help()
+    def help(self):
+        print(".plot(BIAS, CMAP = COLORMAP, WIDTH = WIDTH_VALUE)")
+        print(".ping_remove_for_B(STANDARD_DEVIATION, MAGNETIC_FIELD)")
+        print(".clim_for_B(LOWER_CLIM, UPPER_CLIM, MAGNETIC_FIELD)")
+        print(".add_gate_for_B(GATE_SHIFT, MAGNETIC_FIELD)")
+        print(".butterfly(GATE, CMAP = COLORMAP, WIDTH = WIDTH_VALUE)")
+        print(".waterfall(VERTICAL_OFFSET)")
+
+class butterfly():
+
+    def __init__(self, landau_fan_object, gate, cmap = None, center = False, width = None):
+
+        if cmap is None:
+            cmap = 'RdYlBu_r'
+
+        # energy_vs_B plot
+        self.__evb_fig__ = plt.figure()
+        self.__evb_ax__ = self.__evb_fig__.add_subplot(111)
+        self.__evb_lines__ = []
+        self.l_fan = landau_fan_object
+        self.gate = gate
+
+        # TO DO: Remove code duplication
+        for idx in range(self.l_fan.num_fields):
+            field_value = self.l_fan.magnet[idx]
+            if width is None:
+                if self.l_fan.num_fields == 1:
+                    lower_bound = field_value - 0.5
+                    upper_bound = field_value + 0.5
+                else:
+                    try:
+                        smaller_fvalue = max([val for val in self.l_fan.magnet if val < field_value])
+                        lower_bound = (smaller_fvalue + field_value) * 0.5
+                    except ValueError:
+                        larger_fvalue = min([val for val in self.l_fan.magnet if val > field_value])
+                        lower_bound = field_value - (larger_fvalue - field_value) * 0.5
+                    try:
+                        larger_fvalue = min([val for val in self.l_fan.magnet if val > field_value])
+                        upper_bound = (larger_fvalue + field_value) * 0.5
+                    except ValueError:
+                        smaller_fvalue = max([val for val in self.l_fan.magnet if val < field_value])
+                        upper_bound = field_value + (field_value - smaller_fvalue) * 0.5
+                if center:
+                    even_bound = min([upper_bound - field_value, field_value - lower_bound])
+                    upper_bound = field_value + even_bound
+                    lower_bound = field_value - even_bound
+            else:
+                lower_bound = field_value - width
+                upper_bound = field_value + width
+            fgplot = fixed_gate_plot(self.l_fan.spectra_list[idx], gate, lower_bound, upper_bound, axes = self.__evb_ax__, cmap = cmap)
+            self.__evb_lines__.append(fgplot)
+            if fgplot is None:
+                continue
+            if self.l_fan.chigh[idx] is not None:
+                if self.l_fan.clow[idx] is not None:
+                    fgplot.set_clim(self.l_fan.clow[idx], self.l_fan.chigh[idx])
+                else:
+                    fgplot.set_clim(0, self.l_fan.chigh[idx])
+
+    def get_index_for_B(self, B):
+        nearest_B_index, nearest_B = min(enumerate(self.l_fan.magnet), key = lambda x: abs(x[1] - B))
+        return nearest_B_index
+
+    def clim_for_B(self, c_min, c_max, B):
+        nearest_B_index = self.get_index_for_B(B)
+        self.__evb_lines__[nearest_B_index].set_clim(c_min, c_max)
+
+    def get_clim_for_B(self, B):
+        nearest_B_index = self.get_index_for_B(B)
+        return self.__evb_lines__[nearest_B_index].get_clim()
+
+    def waterfall(self, vertical_shift):
+
+        self.__waterfall_fig__ = plt.figure()
+        self.__waterfall_ax__ = self.__waterfall_fig__.add_subplot(111)
+
+        sorted_fields = sorted(self.l_fan.magnet)
+        for nth in range(self.l_fan.num_fields):
+            
+            nth_field = sorted_fields[nth]
+            idx = self.l_fan.magnet.index(nth_field)
+
+            bias = self.l_fan.spectra_list[idx][0].data['Bias calc (V)']
+            spectra = query(self.l_fan.spectra_list[idx], 'gate == ' + str(self.gate))
+            ngates = len(spectra)
+            if ngates == 0:
+                print("ERROR: GATE NOT FOUND. WATERFALL DOES NOT LOOK FOR NEAREST GATE")
+                print("SKIPPING...")
+                continue
+            clow, chigh = self.__evb_lines__[idx].get_clim()
+            bias = np.array(spectra[0].data['Bias calc (V)'])
+            data = np.array(spectra[0].data['Input 2 (V)'])/(chigh - clow) - clow + nth_field * vertical_shift
+
+            wat_line = self.__waterfall_ax__.plot(bias, data)
+
+def quick_landau_fan(filename, bias = 0, cmap = None, center = False, width = None):
+
+    fan = landau_fan(filename)
+    fan.plot(bias, cmap = cmap, center = center, width = width)
+    return fan
