@@ -739,6 +739,7 @@ class landau_fan():
         self.ax = self.fig.add_subplot(111)
         self.bias = bias
         self.cond_lines = []
+        self.__draw_lines__ = []
 
         for idx in range(self.num_fields):
             field_value = self.magnet[idx]
@@ -789,6 +790,47 @@ class landau_fan():
 
     def reset_gate_shift(self):
         self.__shift_gate__ = np.zeros(self.num_fields)
+
+    def draw(self):
+
+        fig = self.fig
+        ax = self.ax
+        
+        first_pt = [None, None]
+        line = [None]
+        event_handlers = [None, None, None]
+
+        def on_motion(event):
+            if event.inaxes != ax:
+                return
+            line[0][0].set_xdata([first_pt[0], event.xdata])
+            line[0][0].set_ydata([first_pt[1], event.ydata])
+            fig.canvas.draw()
+            
+        def on_click(event):
+            if (event.xdata is not None) and (event.ydata is not None):
+                if first_pt[0] is None :
+                    first_pt[0] = event.xdata
+                    first_pt[1] = event.ydata
+                    line[0] = ax.plot([first_pt[0], first_pt[0]], [first_pt[1], first_pt[1]])
+                    event_handlers[1] = fig.canvas.mpl_connect('motion_notify_event', on_motion)
+                    event_handlers[2] = fig.canvas.mpl_connect('button_release_event', on_release)
+
+        def on_release(event):
+            for event_handler in event_handlers:
+                if event_handler is not None:
+                    fig.canvas.mpl_disconnect(event_handler)
+            self.__draw_lines__.append(line[0][0])
+
+        event_handlers[0] = fig.canvas.mpl_connect('button_press_event', on_click)
+
+    def delete_draw(self):
+        
+        try:
+            line = self.__draw_lines__.pop()
+            line.remove()
+        except IndexError:
+            return
 
     def butterfly(self, gate, cmap = None, center = False, width = None):
 
