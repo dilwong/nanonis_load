@@ -560,7 +560,7 @@ def query(spec_list, query_string):
 
 # TO DO: Waterfall plots would be simpler to generate if fixed_bias_plot and fixed_gate_plot
 #        saved a copy of the data in the landau_fan or butterfly instance
-def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, channel = None, cmap = None, shift_gate = 0, flip_bias = False):
+def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, channel = None, cmap = None, shift_gate = 0, flip_bias = False, normalize = False):
 
     if axes == None:
         fig = plt.figure()
@@ -610,6 +610,23 @@ def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, c
     gate = np.array(gate) + shift_gate
     data = np.array(data)
     data = np.reshape(data, (len(data), nbiases))
+    if normalize:
+        gate_cp = np.copy(gate)
+        rev_index_list = list(range(len(gate)))
+        rev_index_list.reverse()
+        unique_gates = []
+        for rev_index in rev_index_list:
+            if gate[rev_index] in unique_gates:
+                try:
+                    gate_cp[rev_index] = np.nan
+                except ValueError:
+                    gate_cp = np.array(gate_cp, dtype = np.float_)
+                    gate_cp[rev_index] = np.nan
+            else:
+                unique_gates.append(gate[rev_index])
+        gate_index_between = [enum_g[0] for enum_g in enumerate(gate_cp) if normalize[0] <= enum_g[1] <= normalize[1]]
+        data_sum = np.sum(data[gate_index_between, :]) / (len(gate_index_between) * nbiases)
+        data = data/data_sum
 
     new_gate = (gate[1:] + gate[:-1]) * 0.5
     new_gate = np.insert(new_gate, 0, gate[0] - (gate[1] - gate[0]) * 0.5)
@@ -730,7 +747,7 @@ class landau_fan():
         for spec in self.spectra_list[nearest_B_index]:
             std_ping_remove(spec, ping_remove)
 
-    def plot(self, bias, cmap = None, center = False, width = None, flip_bias = False):
+    def plot(self, bias, cmap = None, center = False, width = None, flip_bias = False, normalize = False):
 
         if cmap is None:
             cmap = 'RdYlBu_r'
@@ -768,7 +785,7 @@ class landau_fan():
                 lower_bound = field_value - width
                 upper_bound = field_value + width
             #fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, ping_remove = self.pra[idx], cmap = cmap)
-            fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, cmap = cmap, shift_gate = self.__shift_gate__[idx], flip_bias = flip_bias)
+            fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, cmap = cmap, shift_gate = self.__shift_gate__[idx], flip_bias = flip_bias, normalize = normalize)
             self.cond_lines.append(fbplot)
             if self.chigh[idx] is not None:
                 if self.clow[idx] is not None:
@@ -779,6 +796,11 @@ class landau_fan():
     def clim_for_B(self, c_min, c_max, B):
         nearest_B_index = self.get_index_for_B(B)
         self.cond_lines[nearest_B_index].set_clim(c_min, c_max)
+
+    def clim_for_all(self, c_min, c_max):
+        for line in self.cond_lines:
+            if line is not None:
+                line.set_clim(c_min, c_max)
 
     def get_clim_for_B(self, B):
         nearest_B_index = self.get_index_for_B(B)
