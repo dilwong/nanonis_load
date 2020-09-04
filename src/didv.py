@@ -23,6 +23,7 @@ p.drag_bar(direction = 'v' or 'h', locator = False)
 
 # TO DO: Better docstrings
 # TO DO: Implement GUI using tkinter listbox and matplotlib.use("TkAgg")
+# TO DO: Test for floating point issues?
 
 import numpy as np
 import pandas as pd
@@ -537,9 +538,16 @@ def waterfall(*spectra_list, **kwargs):
 
 def std_ping_remove(spectrum, n): #Removes pings from Input 2 [...] (V), if average over 3 sweeps or more
     data = pd.DataFrame()
+    cnt = 0
     for channel_name in spectrum.data.columns:
         if 'Input 2 [0' in channel_name:
             data[channel_name] = spectrum.data[channel_name]
+            cnt += 1
+    if (cnt == 0) or (cnt == 1):
+        return
+    if cnt == 2:
+        #print("WARNING in didv.std_ping_remove: Only two spectra per average...")
+        return
     std = data.std(axis=1) # Maybe use interquartile range instead of standard deviation
     median = data.median(axis = 1)
     data[np.abs(data.sub(median,axis = 0)).gt(n*std,axis=0)] = np.nan
@@ -560,7 +568,7 @@ def query(spec_list, query_string):
 
 # TO DO: Waterfall plots would be simpler to generate if fixed_bias_plot and fixed_gate_plot
 #        saved a copy of the data in the landau_fan or butterfly instance
-def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, channel = None, cmap = None, shift_gate = 0, flip_bias = False, normalize = False):
+def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, channel = None, cmap = None, shift_gate = 0, flip_bias = False, normalize = False, rasterized = False, parent = None):
 
     if axes == None:
         fig = plt.figure()
@@ -626,6 +634,8 @@ def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, c
                 unique_gates.append(gate[rev_index])
         gate_index_between = [enum_g[0] for enum_g in enumerate(gate_cp) if normalize[0] <= enum_g[1] <= normalize[1]]
         data_sum = np.sum(data[gate_index_between, :]) / (len(gate_index_between) * nbiases)
+        if parent is not None:
+            parent[0].__norm_scale__[parent[1]] = data_sum
         data = data/data_sum
 
     new_gate = (gate[1:] + gate[:-1]) * 0.5
@@ -638,9 +648,9 @@ def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, c
     x = x.T
     y = y.T
 
-    return axes.pcolormesh(x, y, data, cmap = cmap)
+    return axes.pcolormesh(x, y, data, cmap = cmap, rasterized = rasterized)
 
-def fixed_gate_plot(spectra_list, gate, lower_bound, upper_bound, axes = None, channel = None, cmap = None):
+def fixed_gate_plot(spectra_list, gate, lower_bound, upper_bound, axes = None, channel = None, cmap = None, last = True, rasterized = False, scale = None):
 
     if axes == None:
         fig = plt.figure()
@@ -658,6 +668,8 @@ def fixed_gate_plot(spectra_list, gate, lower_bound, upper_bound, axes = None, c
             spectra = query(spectra_list, str(right_gate) + '<= gate <= ' + str(left_gate))
     except TypeError:
         spectra = query(spectra_list, 'gate == ' + str(gate))
+        if last:
+            spectra = [ spectra[-1] ]
     ngates = len(spectra)
     if ngates == 0:
         print("ERROR: GATE NOT FOUND. FIXED_GATE_PLOT DOES NOT LOOK FOR NEAREST GATE")
@@ -674,6 +686,8 @@ def fixed_gate_plot(spectra_list, gate, lower_bound, upper_bound, axes = None, c
         gate.append(spec.gate)
     gate, _, data = zip(*sorted(zip(gate, range(len(gate)), data)))
     data = np.array(data)
+    if scale is not None:
+        data = data/scale
     data = np.reshape(data, (ngates, len(bias)))
     data = data.T
 
@@ -685,7 +699,7 @@ def fixed_gate_plot(spectra_list, gate, lower_bound, upper_bound, axes = None, c
     x = x.T
     y = y.T
 
-    return axes.pcolormesh(x, y, data, cmap = cmap)
+    return axes.pcolormesh(x, y, data, cmap = cmap, rasterized = rasterized)
 
 # TO DO: Implement add_data
 #class landau_fan(interactive_colorplot.colorplot):
@@ -723,6 +737,7 @@ class landau_fan():
 
         self.num_fields = len(self.spectra_list)
         self.__shift_gate__ = np.zeros(self.num_fields)
+        self.__norm_scale__ = np.zeros(self.num_fields)
 
         for spectra in self.spectra_list:
             for spec in spectra:
@@ -746,8 +761,14 @@ class landau_fan():
         print('WARNING: PING_REMOVE ALTERS THE DATA IN SPECTRA_LIST!')
         for spec in self.spectra_list[nearest_B_index]:
             std_ping_remove(spec, ping_remove)
+    
+    def ping_remove_for_all(self, ping_remove):
+        print('WARNING: PING_REMOVE ALTERS THE DATA IN SPECTRA_LIST!')
+        for spec_list in self.spectra_list:
+            for spec in spec_list:
+                std_ping_remove(spec, ping_remove)
 
-    def plot(self, bias, cmap = None, center = False, width = None, flip_bias = False, normalize = False):
+    def plot(self, bias, cmap = None, center = False, width = None, flip_bias = False, normalize = False, rasterized = False):
 
         if cmap is None:
             cmap = 'RdYlBu_r'
@@ -784,8 +805,9 @@ class landau_fan():
             else:
                 lower_bound = field_value - width
                 upper_bound = field_value + width
+            parent = [self, idx]
             #fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, ping_remove = self.pra[idx], cmap = cmap)
-            fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, cmap = cmap, shift_gate = self.__shift_gate__[idx], flip_bias = flip_bias, normalize = normalize)
+            fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, cmap = cmap, shift_gate = self.__shift_gate__[idx], flip_bias = flip_bias, normalize = normalize, rasterized = rasterized, parent = parent)
             self.cond_lines.append(fbplot)
             if self.chigh[idx] is not None:
                 if self.clow[idx] is not None:
@@ -854,9 +876,14 @@ class landau_fan():
         except IndexError:
             return
 
-    def butterfly(self, gate, cmap = None, center = False, width = None):
+    def butterfly(self, gate, cmap = None, center = False, width = None, rasterized = False):
 
-        return butterfly(self, gate, cmap = cmap, center = center, width = width)
+        if np.any(self.__norm_scale__ == 0):
+            scale = None
+        else:
+            scale = self.__norm_scale__
+
+        return butterfly(self, gate, cmap = cmap, center = center, width = width, rasterized = rasterized, scale = scale)
 
     def waterfall(self, vertical_shift):
 
@@ -894,7 +921,7 @@ class landau_fan():
 
 class butterfly():
 
-    def __init__(self, landau_fan_object, gate, cmap = None, center = False, width = None):
+    def __init__(self, landau_fan_object, gate, cmap = None, center = False, width = None, rasterized = False, scale = None):
 
         if cmap is None:
             cmap = 'RdYlBu_r'
@@ -933,7 +960,11 @@ class butterfly():
             else:
                 lower_bound = field_value - width
                 upper_bound = field_value + width
-            fgplot = fixed_gate_plot(self.l_fan.spectra_list[idx], gate, lower_bound, upper_bound, axes = self.__evb_ax__, cmap = cmap)
+            if scale is None:
+                scale_val = None
+            else:
+                scale_val = scale[idx]
+            fgplot = fixed_gate_plot(self.l_fan.spectra_list[idx], gate, lower_bound, upper_bound, axes = self.__evb_ax__, cmap = cmap, rasterized = rasterized, scale = scale_val)
             self.__evb_lines__.append(fgplot)
             if fgplot is None:
                 continue
@@ -950,6 +981,11 @@ class butterfly():
     def clim_for_B(self, c_min, c_max, B):
         nearest_B_index = self.get_index_for_B(B)
         self.__evb_lines__[nearest_B_index].set_clim(c_min, c_max)
+
+    def clim_for_all(self, c_min, c_max):
+        for line in self.__evb_lines__:
+            if line is not None:
+                line.set_clim(c_min, c_max)
 
     def get_clim_for_B(self, B):
         nearest_B_index = self.get_index_for_B(B)
@@ -979,8 +1015,8 @@ class butterfly():
 
             wat_line = self.__waterfall_ax__.plot(bias, data)
 
-def quick_landau_fan(filename, bias = 0, cmap = None, center = False, width = None):
+def quick_landau_fan(filename, bias = 0, cmap = None, center = False, width = None, rasterized = False):
 
     fan = landau_fan(filename)
-    fan.plot(bias, cmap = cmap, center = center, width = width)
+    fan.plot(bias, cmap = cmap, center = center, width = width, rasterized = rasterized)
     return fan
