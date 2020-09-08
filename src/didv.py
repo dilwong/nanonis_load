@@ -228,6 +228,7 @@ class colorplot(interactive_colorplot.colorplot):
         self.state_for_update = {}
         self.terminate = False
         self.initial_kwarg_state = kwargs
+        self.__bshift__ = bias_shift
 
         self.spectra_list = parse_arguments(*spectra_list)
         if not self.spectra_list:
@@ -252,7 +253,17 @@ class colorplot(interactive_colorplot.colorplot):
         if dark:
             plt.style.use('dark_background')
 
-        bias = self.spectra_list[0].data.iloc[:,0].values - bias_shift
+        try:
+            bias_shift[0]
+            bias = self.spectra_list[0].data.iloc[:,0].values
+        except TypeError:
+            try:
+                if bias_shift == 0:
+                    bias = self.spectra_list[0].data.iloc[:,0].values
+                else:
+                    bias = self.spectra_list[0].data.iloc[:,0].values - bias_shift
+            except Exception:
+                bias = self.spectra_list[0].data.iloc[:,0].values
         if transform is None:
             if multiply is None:
                 self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values
@@ -308,6 +319,13 @@ class colorplot(interactive_colorplot.colorplot):
         x, y = np.meshgrid(new_bias, new_index_range) # Will handle non-linear bias array
         x = x.T
         y = y.T
+        try:
+            bias_shift_len = len(bias_shift)
+            if bias_shift_len == len(self.index_list):
+                for idx, shift_val in enumerate(bias_shift):
+                    x[:,idx] = x[:,idx] + shift_val
+        except TypeError:
+            pass
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = pcolor_cm, rasterized = rasterized)
         self.original_cmap = self.pcolor.cmap
         if colorbar:
@@ -383,6 +401,25 @@ class colorplot(interactive_colorplot.colorplot):
         self.fig.canvas.mpl_connect('close_event', handle_close)
 
         thread.start_new_thread(self.update_loop, (wait_time, ))
+
+    def save_data_to_file(self, filename):
+        
+        x, y = np.meshgrid(self.bias, self.index_list)
+        x = x.T
+        y = y.T
+        try:
+            bias_shift_len = len(self.__bshift__)
+            if bias_shift_len == len(self.index_list):
+                for idx, shift_val in enumerate(self.__bshift__):
+                    x[:,idx] = x[:,idx] + shift_val
+        except TypeError:
+            pass
+        x = np.reshape(x, (x.size, 1))
+        y = np.reshape(y, (y.size, 1))
+        z = np.reshape(self.data, (self.data.size, 1))
+        cols = np.append(x, y, axis = 1)
+        cols = np.append(cols, z, axis = 1)
+        np.savetxt(filename, cols)
 
 def batch_load(basename, file_range = None, attribute_list = None):
 
