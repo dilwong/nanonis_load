@@ -309,6 +309,8 @@ class colorplot(interactive_colorplot.colorplot):
         if over_iv is not None:
             self.data = self.data/self.current*(self.bias[:,np.newaxis] - over_iv[1])
 
+        # TO DO: This program assumes all spectra have the same bias list.
+        #        Implement the ability to handle spectra with different bias lists.
         new_bias = (bias[1:] + bias[:-1]) * 0.5
         new_bias = np.insert(new_bias, 0, bias[0] - (bias[1] - bias[0]) * 0.5)
         new_index_range = (self.index_list[1:] + self.index_list[:-1]) * 0.5
@@ -322,7 +324,10 @@ class colorplot(interactive_colorplot.colorplot):
         try:
             bias_shift_len = len(bias_shift)
             if bias_shift_len == len(self.index_list):
-                for idx, shift_val in enumerate(bias_shift):
+                new_bias_shift = (np.array(bias_shift[1:]) + np.array(bias_shift[:-1])) * 0.5 # Is this the right thing to do?
+                new_bias_shift = np.insert(new_bias_shift, 0, bias_shift[0] - (bias_shift[1] - bias_shift[0]) * 0.5)
+                new_bias_shift = np.append(new_bias_shift, bias_shift[-1] + (bias_shift[-1] - bias_shift[-2]) * 0.5)
+                for idx, shift_val in enumerate(new_bias_shift): # Doesn't play nice with vertical dragbar
                     x[:,idx] = x[:,idx] + shift_val
         except TypeError:
             pass
@@ -420,6 +425,98 @@ class colorplot(interactive_colorplot.colorplot):
         cols = np.append(x, y, axis = 1)
         cols = np.append(cols, z, axis = 1)
         np.savetxt(filename, cols)
+
+    # Finds peaks and clusters them according to DBSCAN algorithm with parameters eps and min_samples
+    # sigma controls the Gaussian smoothing of each index line before finding the local maxima
+    #
+    # TO DO: Implement a function that shifts data by np.convolve or np.correlate
+    def peak_identify(self, sigma = 1.5, eps = 3, min_samples = 5):
+
+        from sklearn.cluster import DBSCAN
+        from scipy.ndimage import gaussian_filter1d
+        from scipy.signal import argrelextrema
+        
+        lpts_bias = []
+        lpts_gate = []
+        pairs = []
+        mod_pairs = []
+        for idx in range(self.data.shape[1]):
+            smoothed = gaussian_filter1d(self.data[:, idx], sigma)
+            maxargs = argrelextrema(smoothed, np.greater)[0]
+            for maxarg in maxargs:
+                lpts_bias.append(self.bias[maxarg])
+                lpts_gate.append(self.gate[idx])
+                pairs.append([maxarg, idx])
+                mod_pairs.append([1.0*maxarg, idx/1.0])
+        clustering = DBSCAN(eps = eps, min_samples = min_samples).fit(mod_pairs)
+        label_list = clustering.labels_
+        labels = set(label_list)
+        for label in labels:
+            points_list = []
+            for index, point in enumerate(label_list):
+                if point == label:
+                    xb = self.bias[pairs[index][0]]
+                    yg = self.gate[pairs[index][1]]
+                    points_list.append([xb, yg])
+                    x, y = zip(*points_list)
+                    self.ax.scatter(x, y, s = .2)
+        self.__peak_pairs__ = pairs
+        self.__peak_cluster_labels__ = label_list
+
+    def get_peak_cluster(self, bias, gate):
+        gate_index = min(range(len(self.gate)), key = lambda idx: abs(self.gate[idx] - gate))
+        bias_index = min(range(len(self.bias)), key = lambda idx: abs(self.bias[idx] - bias))
+        nearest_pair_index = min(range(len(self.__peak_pairs__)), key = lambda idx: (bias_index - self.__peak_pairs__[idx][0])**2 + (gate_index - self.__peak_pairs__[idx][1])**2)
+        cluster_index = self.__peak_cluster_labels__[nearest_pair_index]
+        cluster_list = [idx for idx, val in enumerate(self.__peak_cluster_labels__) if val == cluster_index]
+        relevant_pairs = [self.__peak_pairs__[idx] for idx in cluster_list]
+        x, y = list(zip(*relevant_pairs))
+        x = list(x)
+        y = list(y)
+        biases = self.bias[x]
+        gates = self.gate[y]
+        self.ax.scatter(biases, gates, marker = "*")
+        return [x, y, biases, gates]
+
+    def peak_follower(self, start_bias, start_gate, end_gate, cluster_filter = False):
+        start_gate_index = min(range(len(self.gate)), key = lambda idx: abs(self.gate[idx] - start_gate))
+        end_gate_index = min(range(len(self.gate)), key = lambda idx: abs(self.gate[idx] - end_gate))
+        start_bias_index = min(range(len(self.bias)), key = lambda idx: abs(self.bias[idx] - start_bias))
+        if start_gate_index < end_gate_index:
+            gate_index_increment = 1
+        elif start_gate_index > end_gate_index:
+            gate_index_increment = -1
+        else:
+            print("Error: Start Gate == End Gate")
+            return
+        all_pairs = list(zip(self.__peak_pairs__,self.__peak_cluster_labels__))
+        starting_pairs = [pair for pair in all_pairs if pair[0][1] == start_gate_index]
+        index_into_pair = min(range(len(starting_pairs)), key = lambda idx: abs(starting_pairs[idx][0][0] - start_bias_index))
+        curr_bias_index = starting_pairs[index_into_pair][0][0]
+        curr_gate_index = start_gate_index
+        if cluster_filter:
+            cluster_index = starting_pairs[index_into_pair][1]
+            relevant_pairs = [[pair[0][0], pair[0][1]] for pair in all_pairs if pair[1] == cluster_index]
+        else:
+            relevant_pairs = [[pair[0][0], pair[0][1]] for pair in all_pairs]
+        b_list = [ curr_bias_index ]
+        g_list = [ curr_gate_index ]
+        while curr_gate_index != end_gate_index:
+            curr_gate_index += gate_index_increment
+            searched_biases = np.array([pair[0] for pair in relevant_pairs if pair[1] == curr_gate_index])
+            if searched_biases.size == 0:
+                #break
+                continue
+            index_into_bias = np.argmin(np.abs(searched_biases - curr_bias_index))
+            curr_bias_index = searched_biases[index_into_bias]
+            b_list.append(curr_bias_index)
+            g_list.append(curr_gate_index)
+        biases = self.bias[b_list]
+        gates = self.gate[g_list]
+        x = np.array(b_list)
+        y = np.array(g_list)
+        self.ax.scatter(biases, gates, marker = "*")
+        return [x, y, biases, gates]
 
 def batch_load(basename, file_range = None, attribute_list = None):
 
