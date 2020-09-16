@@ -229,6 +229,7 @@ class colorplot(interactive_colorplot.colorplot):
         self.terminate = False
         self.initial_kwarg_state = kwargs
         self.__bshift__ = bias_shift
+        self.__linecut_event_handlers__ = []
 
         self.spectra_list = parse_arguments(*spectra_list)
         if not self.spectra_list:
@@ -518,6 +519,182 @@ class colorplot(interactive_colorplot.colorplot):
         self.ax.scatter(biases, gates, marker = "*")
         return [x, y, biases, gates]
 
+    def linecut(self, startPoint = None, endPoint = None, ninterp = 200, axes = None):
+
+        from matplotlib.collections import LineCollection
+
+        x, y = np.meshgrid(self.bias, self.index_list)
+        x = x.T
+        y = y.T
+        try:
+            bias_shift_len = len(self.__bshift__)
+            if bias_shift_len == len(self.index_list):
+                for idx, shift_val in enumerate(self.__bshift__):
+                    x[:,idx] = x[:,idx] + shift_val
+        except TypeError:
+            pass
+        x = x.flatten()
+        y = y.flatten()
+        data = self.data.flatten()
+
+        fig = self.fig
+        ax = self.ax
+        
+        first_pt = [None, None]
+        last_pt = [None, None]
+        line = [None, None]
+        linecut_points = [] #linecut_points = set()
+        try:
+            self.linecut_points.append(linecut_points)
+        except Exception: #AttributeError
+            self.linecut_points = []
+            self.linecut_points.append(linecut_points)
+
+        nState = [0, None, None]
+        pickrad = 1.0
+
+        #for event_handler in self.__linecut_event_handlers__:
+        #    for itm in event_handler:
+        #        if itm is not None:
+        #        fig.canvas.mpl_disconnect(itm)
+        event_handlers = [None, None, None]
+        self.__linecut_event_handlers__.append(event_handlers)
+
+        if axes is None:
+            linecut_fig = plt.figure()
+            linecut_ax = linecut_fig.add_subplot(111)
+        else:
+            linecut_ax = axes
+            linecut_fig = linecut_ax.figure
+
+        def nearest_pt(bias_val, gate_val):
+            dist_matrix = (x - bias_val)**2 + (y - gate_val)**2
+            return np.argmin(dist_matrix)
+
+        def build_line():
+            line[0][0].set_xdata([first_pt[0], last_pt[0]])
+            line[0][0].set_ydata([first_pt[1], last_pt[1]])
+            fig.canvas.draw()
+            x_list = np.linspace(first_pt[0], last_pt[0], ninterp)
+            y_list = np.linspace(first_pt[1], last_pt[1], ninterp)
+            linecut_points[:] = []
+            for idx in range(ninterp):
+                closest_pt_idx = nearest_pt(x_list[idx], y_list[idx])
+                closest_pt = (x[closest_pt_idx], y[closest_pt_idx], data[closest_pt_idx])
+                if closest_pt not in linecut_points:
+                    linecut_points.append(closest_pt)
+            linecut_points[:] = sorted(linecut_points, key = lambda itm: itm[0])
+            points = np.array(linecut_points)
+            bias = points[:,0]
+            gate = points[:,1]
+            conductance = points[:,2]
+            points_tmp = points[:, [0, 2]].reshape(-1, 1, 2)
+            segments = np.concatenate([points_tmp[:-1], points_tmp[1:]], axis = 1)
+            norm = plt.Normalize(gate.min(), gate.max())
+            lc = LineCollection(segments, cmap = 'plasma', norm = norm)
+            lc.set_array(gate[:-1])
+            lc.set_linewidth(2)
+            if line[1] is not None:
+                line[1].remove()
+            line[1] = linecut_ax.add_collection(lc)
+            bias_min = bias.min()
+            bias_max = bias.max()
+            conductance_min = conductance.min()
+            conductance_max = conductance.max()
+            if bias_min != bias_max:
+                linecut_ax.set_xlim(bias_min, bias_max)
+            if conductance_min != conductance_max:
+                linecut_ax.set_ylim(conductance_min, conductance_max)
+            linecut_fig.canvas.draw()
+            
+        def on_click(event):
+            if (event.xdata is not None) and (event.ydata is not None):
+                if first_pt[0] is None :
+                    if startPoint is None:
+                        nearest_idx = nearest_pt(event.xdata, event.ydata)
+                    else:
+                        nearest_idx = nearest_pt(startPoint[0], startPoint[1])
+                    first_pt[0] = x[nearest_idx]
+                    first_pt[1] = y[nearest_idx]
+                    line[0] = ax.plot([first_pt[0], first_pt[0]], [first_pt[1], first_pt[1]], pickradius = pickrad)
+                    event_handlers[1] = fig.canvas.mpl_connect('motion_notify_event', on_motion)
+                    event_handlers[2] = fig.canvas.mpl_connect('button_release_event', on_release)
+                else:
+                    try:
+                        first_dist = (event.xdata - first_pt[0])**2 + (event.ydata - first_pt[1])**2
+                        last_dist = (event.xdata - last_pt[0])**2 + (event.ydata - last_pt[1])**2
+                        distSens = 1
+                        if first_dist < last_dist:
+                            if first_dist < distSens:
+                                nState[1] = 0
+                                return
+                        elif first_dist > last_dist:
+                            if last_dist < distSens:
+                                nState[1] = 1
+                                return
+                        else:
+                            pass
+                        contains, _ = line[0][0].contains(event)
+                        if not contains:
+                            return
+                        else:
+                            nState[1] = 2
+                            nState[2] = [first_pt[0], first_pt[1], last_pt[0], last_pt[1], event.xdata, event.ydata]
+                    except TypeError:
+                        pass
+
+        def on_motion(event):
+            if event.inaxes != ax:
+                return
+            if nState[0] == 0:
+                if endPoint is None:
+                    nearest_idx = nearest_pt(event.xdata, event.ydata)
+                else:
+                    nearest_idx = nearest_pt(endPoint[0], endPoint[1])
+                last_pt[0] = x[nearest_idx]
+                last_pt[1] = y[nearest_idx]
+                build_line()
+            else:
+                nearest_idx = nearest_pt(event.xdata, event.ydata)
+                if nState[1] == 0:
+                    first_pt[0] = x[nearest_idx]
+                    first_pt[1] = y[nearest_idx]
+                    build_line()
+                elif nState[1] == 1:
+                    last_pt[0] = x[nearest_idx]
+                    last_pt[1] = y[nearest_idx]
+                    build_line()
+                elif nState[1] == 2:
+                    vec_x = event.xdata - nState[2][4]
+                    vec_y = event.ydata - nState[2][5]
+                    first_pt[0] = nState[2][0] + vec_x
+                    first_pt[1] = nState[2][1] + vec_y
+                    last_pt[0] = nState[2][2] + vec_x
+                    last_pt[1] = nState[2][3] + vec_y
+                    build_line()
+                else:
+                    pass
+
+        def on_release(event):
+            nState[0] += 1
+            nState[1] = None
+            nState[2] = None
+
+        if (startPoint is not None) and (endPoint is not None):
+            nearest_idx = nearest_pt(startPoint[0], startPoint[1])
+            first_pt[0] = x[nearest_idx]
+            first_pt[1] = y[nearest_idx]
+            nearest_idx = nearest_pt(endPoint[0], endPoint[1])
+            last_pt[0] = x[nearest_idx]
+            last_pt[1] = y[nearest_idx]
+            line[0] = ax.plot([first_pt[0], last_pt[0]], [first_pt[1], last_pt[1]], pickradius = pickrad)
+            build_line()
+            event_handlers[1] = fig.canvas.mpl_connect('motion_notify_event', on_motion)
+            event_handlers[2] = fig.canvas.mpl_connect('button_release_event', on_release)
+            nState[0] += 1
+
+        event_handlers[0] = fig.canvas.mpl_connect('button_press_event', on_click)
+
 def batch_load(basename, file_range = None, attribute_list = None):
 
     if file_range is None:
@@ -723,20 +900,9 @@ def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, c
     except TypeError:
         bias_index = min(range(len(bias_list)), key = lambda bidx: abs(bias_list[bidx] - bias))
         nbiases = 1
-        #print(bias_index)
-        #print(bias_list[bias_index])
 
     if channel is None:
-        # for spec in spectra_list:
-        #     spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
-        # if double_lockin:
-        #     spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
-        #     spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
         channel = 'Input 2 (V)'
-    # if ping_remove:
-    #     print('WARNING: PING_REMOVE ALTERS THE DATA IN SPECTRA_LIST!')
-    #     for spec in spectra_list:
-    #         std_ping_remove(spec, ping_remove)
 
     gate = []
     data = []
@@ -850,7 +1016,6 @@ class landau_fan():
         self.clow = []
         self.chigh = []
         self.spectra_list = []
-        #self.pra = []
         with open(filename, 'r') as f:
             for fline in f:
                 field_line = fline.split()
@@ -867,7 +1032,6 @@ class landau_fan():
                 except ValueError:
                     self.chigh.append(None)
                 self.spectra_list.append(parse_arguments(*field_line[3:]))
-                #self.pra.append(None)
 
         self.num_fields = len(self.spectra_list)
         self.__shift_gate__ = np.zeros(self.num_fields)
@@ -876,19 +1040,10 @@ class landau_fan():
         for spectra in self.spectra_list:
             for spec in spectra:
                 spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
-            # if double_lockin:
-            #     spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
-            #     spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
 
     def get_index_for_B(self, B):
         nearest_B_index, nearest_B = min(enumerate(self.magnet), key = lambda x: abs(x[1] - B))
         return nearest_B_index
-
-    # def set_ping_remove(self, ping_remove_array):
-    #     if len(ping_remove_array) == self.num_fields:
-    #         self.pra = ping_remove_array
-    #     else:
-    #         print('ERROR: PING_REMOVE_ARRAY NOT CORRECT LENGTH')
 
     def ping_remove_for_B(self, ping_remove, B):
         nearest_B_index = self.get_index_for_B(B)
@@ -940,7 +1095,6 @@ class landau_fan():
                 lower_bound = field_value - width
                 upper_bound = field_value + width
             parent = [self, idx]
-            #fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, ping_remove = self.pra[idx], cmap = cmap)
             fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, cmap = cmap, shift_gate = self.__shift_gate__[idx], flip_bias = flip_bias, normalize = normalize, rasterized = rasterized, parent = parent)
             self.cond_lines.append(fbplot)
             if self.chigh[idx] is not None:
