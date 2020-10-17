@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 
 import scipy.signal
 
+#import traceback
+
 #Loads .sxm files into Nanonis
 class sxm():
 
@@ -56,8 +58,8 @@ class sxm():
         raw_data = np.frombuffer(raw_data, dtype='>f')
         for idx, channel_name in enumerate(self.header['channels']):
             channel_data = raw_data[idx*size*2:(idx+1)*size*2]
-            self.data[channel_name] = [channel_data[0:size].reshape(self.header['x_pixels'], self.header['y_pixels'])]
-            self.data[channel_name].append(channel_data[size:2*size].reshape(self.header['x_pixels'], self.header['y_pixels']))
+            self.data[channel_name] = [channel_data[0:size].reshape(self.header['y_pixels'], self.header['x_pixels'])]
+            self.data[channel_name].append(channel_data[size:2*size].reshape(self.header['y_pixels'], self.header['x_pixels']))
 
 #direction = 0 for forward, direction = 1 for backwards
 class plot():
@@ -88,7 +90,9 @@ class plot():
         x_pixels = sxm_data.header['x_pixels']
         y_pixels = sxm_data.header['y_pixels']
         y, x = np.mgrid[0:x_range:x_pixels*1j,0:y_range:y_pixels*1j]
-        self.pcolor = self.ax.pcolormesh(x, y, image_data, cmap = 'copper') # pcolormesh chops off last column and row here
+        #x = x.T
+        #y = y.T
+        self.pcolor = self.ax.pcolormesh(y, x, image_data.T, cmap = 'copper') # pcolormesh chops off last column and row here
         self.fig.colorbar(self.pcolor, ax = self.ax)
         self.image_data = image_data
 
@@ -103,11 +107,15 @@ class plot():
 
     def colormap(self, cmap):
         self.pcolor.set_cmap(cmap)
-    
-    # TO DO: Add feature such that clicking a red X shows spectrum.  Or hover over X to show spectrum.
-    def add_spectra(self, spectra, labels):
+
+    def add_spectra(self, spectra, labels = None):
+
+        import didv
+
         theta = np.radians(self.data.header['angle'])
         R = np.array(((np.cos(theta), -np.sin(theta)), (np.sin(theta), np.cos(theta))))
+        if labels is None:
+            labels = [''] * len(spectra) # labels = range(1, len(spectra) + 1)
         try:
             spectra_iterator = iter(spectra)
             label_iterator = iter(labels)
@@ -119,9 +127,22 @@ class plot():
             spectrum_to_center = R.dot(spectrum_to_center)
             x = spectrum_to_center[0] + self.data.header['x_range (nm)'] * 0.5
             y = spectrum_to_center[1] + self.data.header['y_range (nm)'] * 0.5
-            self.ax.scatter(x, y, marker='x', color='red')
-            self.ax.text(x, y, label_inst, fontsize = 10)
-    
+            s_plt = self.ax.scatter(x, y, marker='x', color='red', picker = True)
+            lbl_plt = self.ax.text(x, y, label_inst, fontsize = 10)
+            def picker_factory(spec_obj, scatter_plot):
+                def on_pick(event):
+                    if scatter_plot == event.artist:
+                        try:
+                            spec_obj.data['Input 2 (V)']
+                            didv.plot(spec_obj, channel = 'Input 2 (V)')
+                        except KeyError:
+                            #err_detect = traceback.format_exc()
+                            #print(err_detect)
+                            didv.plot(spec_obj, channel = 'Input 2 [AVG] (V)')
+                return on_pick
+            pick_caller = picker_factory(spectrum_inst, s_plt)
+            self.fig.canvas.mpl_connect('pick_event', pick_caller)
+
     def fft(self):
         self.fft_fig = plt.figure()
         self.fft_ax = self.fft_fig.add_subplot(111)

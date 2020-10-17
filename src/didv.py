@@ -38,6 +38,8 @@ try:
 except ImportError:
     import interactive_colorplot
 
+import traceback
+
 class spectrum():
 
     """
@@ -347,46 +349,51 @@ class colorplot(interactive_colorplot.colorplot):
 
     def update(self):
 
-        self.spectra_list = parse_arguments(*self.arg_list)
+        try:
+            self.spectra_list = parse_arguments(*self.arg_list)
 
-        # Only works for Input 2 (V) or similar types of data
-        for spec in self.spectra_list:
-            spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
-            if 'double_lockin' in self.state_for_update:
-                spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
-                spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
-        if 'ping_remove' in self.state_for_update:
+            # Only works for Input 2 (V) or similar types of data
             for spec in self.spectra_list:
-                std_ping_remove(spec, ping_remove)
-        bias = self.spectra_list[0].data.iloc[:,0].values # No bias_shift
-        self.index_list = np.array([spec.gate for spec in self.spectra_list])
-        new_bias = (bias[1:] + bias[:-1]) * 0.5
-        new_bias = np.insert(new_bias, 0, bias[0] - (bias[1] - bias[0]) * 0.5)
-        new_index_range = (self.index_list[1:] + self.index_list[:-1]) * 0.5
-        new_index_range = np.insert(new_index_range, 0, self.index_list[0] - (self.index_list[1] - self.index_list[0]) * 0.5)
-        new_bias = np.append(new_bias, bias[-1] + (bias[-1] - bias[-2]) * 0.5)
-        new_index_range = np.append(new_index_range, self.index_list[-1] + (self.index_list[-1] - self.index_list[-2]) * 0.5)
-        x, y = np.meshgrid(new_bias, new_index_range) # Will handle non-linear bias array
-        x = x.T
-        y = y.T
-        cmap = self.pcolor.cmap
-        clim_min, clim_max = self.pcolor.get_clim()
-        self.bias = bias
-        self.gate = self.index_list
-        self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values  # No transform, multiply, over_iv
-        colorbar = self.initial_kwarg_state['colorbar'] if ('colorbar' in self.initial_kwarg_state) else True
-        if colorbar:
-            self.colorbar.remove()
-        self.pcolor.remove()
-        self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = cmap)
-        self.clim(clim_min, clim_max)
-        if colorbar:
-            self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
-        self.xlist = self.bias
-        self.ylist = self.gate
-        for dragbar in self.__draggables__:
-            dragbar.update_data()
-        self.fig.canvas.draw()
+                spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
+                if 'double_lockin' in self.state_for_update:
+                    spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
+                    spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
+            if 'ping_remove' in self.state_for_update:
+                for spec in self.spectra_list:
+                    std_ping_remove(spec, self.initial_kwarg_state['ping_remove'])
+            bias = self.spectra_list[0].data.iloc[:,0].values # No bias_shift
+            self.index_list = np.array([spec.gate for spec in self.spectra_list])
+            new_bias = (bias[1:] + bias[:-1]) * 0.5
+            new_bias = np.insert(new_bias, 0, bias[0] - (bias[1] - bias[0]) * 0.5)
+            new_index_range = (self.index_list[1:] + self.index_list[:-1]) * 0.5
+            new_index_range = np.insert(new_index_range, 0, self.index_list[0] - (self.index_list[1] - self.index_list[0]) * 0.5)
+            new_bias = np.append(new_bias, bias[-1] + (bias[-1] - bias[-2]) * 0.5)
+            new_index_range = np.append(new_index_range, self.index_list[-1] + (self.index_list[-1] - self.index_list[-2]) * 0.5)
+            x, y = np.meshgrid(new_bias, new_index_range) # Will handle non-linear bias array
+            x = x.T
+            y = y.T
+            cmap = self.pcolor.cmap
+            clim_min, clim_max = self.pcolor.get_clim()
+            self.bias = bias
+            self.gate = self.index_list
+            self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values  # No transform, multiply, over_iv
+            colorbar = self.initial_kwarg_state['colorbar'] if ('colorbar' in self.initial_kwarg_state) else True
+            if colorbar:
+                self.colorbar.remove()
+            self.pcolor.remove()
+            self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = cmap)
+            self.clim(clim_min, clim_max)
+            if colorbar:
+                self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
+            self.xlist = self.bias
+            self.ylist = self.gate
+            for dragbar in self.__draggables__:
+                dragbar.update_data()
+            self.fig.canvas.draw()
+        except:
+            err_detect = traceback.format_exc()
+            print(err_detect)
+            raise
 
     def update_loop(self, wait_time):
 
@@ -409,7 +416,7 @@ class colorplot(interactive_colorplot.colorplot):
         thread.start_new_thread(self.update_loop, (wait_time, ))
 
     def save_data_to_file(self, filename):
-        
+
         x, y = np.meshgrid(self.bias, self.index_list)
         x = x.T
         y = y.T
@@ -436,7 +443,7 @@ class colorplot(interactive_colorplot.colorplot):
         from sklearn.cluster import DBSCAN
         from scipy.ndimage import gaussian_filter1d
         from scipy.signal import argrelextrema
-        
+
         lpts_bias = []
         lpts_gate = []
         pairs = []
@@ -539,7 +546,7 @@ class colorplot(interactive_colorplot.colorplot):
 
         fig = self.fig
         ax = self.ax
-        
+
         first_pt = [None, None]
         last_pt = [None, None]
         line = [None, None]
@@ -606,7 +613,7 @@ class colorplot(interactive_colorplot.colorplot):
             if conductance_min != conductance_max:
                 linecut_ax.set_ylim(conductance_min, conductance_max)
             linecut_fig.canvas.draw()
-            
+
         def on_click(event):
             if (event.xdata is not None) and (event.ydata is not None):
                 if first_pt[0] is None :
@@ -1050,7 +1057,7 @@ class landau_fan():
         print('WARNING: PING_REMOVE ALTERS THE DATA IN SPECTRA_LIST!')
         for spec in self.spectra_list[nearest_B_index]:
             std_ping_remove(spec, ping_remove)
-    
+
     def ping_remove_for_all(self, ping_remove):
         print('WARNING: PING_REMOVE ALTERS THE DATA IN SPECTRA_LIST!')
         for spec_list in self.spectra_list:
@@ -1127,7 +1134,7 @@ class landau_fan():
 
         fig = self.fig
         ax = self.ax
-        
+
         first_pt = [None, None]
         line = [None]
         event_handlers = [None, None, None]
@@ -1138,7 +1145,7 @@ class landau_fan():
             line[0][0].set_xdata([first_pt[0], event.xdata])
             line[0][0].set_ydata([first_pt[1], event.ydata])
             fig.canvas.draw()
-            
+
         def on_click(event):
             if (event.xdata is not None) and (event.ydata is not None):
                 if first_pt[0] is None :
@@ -1157,7 +1164,7 @@ class landau_fan():
         event_handlers[0] = fig.canvas.mpl_connect('button_press_event', on_click)
 
     def delete_draw(self):
-        
+
         try:
             line = self.__draw_lines__.pop()
             line.remove()
@@ -1180,7 +1187,7 @@ class landau_fan():
 
         sorted_fields = sorted(self.magnet)
         for nth in range(self.num_fields):
-            
+
             nth_field = sorted_fields[nth]
             idx = self.magnet.index(nth_field)
 
@@ -1286,7 +1293,7 @@ class butterfly():
 
         sorted_fields = sorted(self.l_fan.magnet)
         for nth in range(self.l_fan.num_fields):
-            
+
             nth_field = sorted_fields[nth]
             idx = self.l_fan.magnet.index(nth_field)
 
