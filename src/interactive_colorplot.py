@@ -18,17 +18,28 @@ class colorplot():
         self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
         self.__drag_color_index__ = 0
         self.__colorbar_rectangles__ = []
+        self.__x_axes_limits__ = None
+        self.__y_axes_limits__ = None
 
     def xlim(self, x_min, x_max):
         self.ax.set_xlim(x_min, x_max)
+        self.__x_axes_limits__ = [x_min, x_max]
 
     def ylim(self, y_min, y_max):
         self.ax.set_ylim(y_min, y_max)
+        self.__y_axes_limits__ = [y_min, y_max]
 
     def clim(self, c_min, c_max):
         self.pcolor.set_clim(c_min, c_max)
         if len(self.__colorbar_rectangles__) != 0:
             self.update_colormap()
+
+    def axes_reset(self):
+        try:
+            self.xlim(*self.__x_axes_limits__)
+            self.ylim(*self.__y_axes_limits__)
+        except TypeError:
+            pass
 
     def colormap(self, cmap, change_original = True):
         if type(cmap) == np.ndarray:
@@ -88,7 +99,7 @@ class colorplot():
         def on_click_ax(event):
             if (event.inaxes == self.ax) and (event.button == 3):
                 self.add_colorbar_rectangle(event.xdata, event.ydata)
-        
+
         def on_click_bar(event):
             if event.inaxes == self.color_select_ax:
                 for rect in self.__colorbar_rectangles__:
@@ -363,12 +374,12 @@ class drag_bar():
 class colorbar_rectangle():
 
     def __init__(self, x_value, y_value, colorplot):
-        
+
         self.colorplot = colorplot
         x_tuple = min(enumerate(self.colorplot.xlist), key = lambda x: (abs(x[1] - x_value), -x[0]))
         y_tuple = min(enumerate(self.colorplot.ylist), key = lambda x: (abs(x[1] - y_value), -x[0]))
         c_value = self.colorplot.data[x_tuple[0], y_tuple[0]]
-        
+
         self.x_tuple = x_tuple
         self.y_tuple = y_tuple
         self.c_value = c_value
@@ -386,7 +397,7 @@ class colorbar_rectangle():
             self.orig_norm_value = 0.0
         else:
             self.orig_norm_value = np.interp(c_value, self.colorplot.pcolor.get_clim(), (0,1))
-        
+
         width, height = self.ax.transData.inverted().transform(self.ax.transAxes.transform((0.025,0.025))) - self.ax.transData.inverted().transform(self.ax.transAxes.transform((0,0)))
         self.rect = matplotlib.patches.Rectangle((x_tuple[1] - width * 0.5, y_tuple[1] - height * 0.5), width, height, edgecolor='k', facecolor=self.color)
         self.width = width

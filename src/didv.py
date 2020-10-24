@@ -340,6 +340,8 @@ class colorplot(interactive_colorplot.colorplot):
             self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
         self.ax.set_xlabel('Sample Bias (V)')
         self.ax.set_ylabel(index_label)
+        self.__x_axes_limits__ = list(self.ax.get_xlim())
+        self.__y_axes_limits__ = list(self.ax.get_ylim())
 
         if dark:
             plt.style.use('default')
