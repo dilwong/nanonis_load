@@ -74,8 +74,11 @@ class spectrum():
 
         self.data = pd.read_csv(filename, sep = '\t', header = header_lines, skip_blank_lines = False)
 
-    def to_clipboard(self):
-        self.data.to_clipboard()
+    def to_clipboard(self, channel = None):
+        if channel is None:
+            self.data.to_clipboard()
+        else:
+            self.data[channel].to_clipboard(header = True)
 
     def plot(self, channel = 'Input 2 (V)', label = 'gate', multiply = 1, add = 0, plot_on_previous = False, **kwargs):
         if label == 'gate':
@@ -271,12 +274,10 @@ class colorplot(interactive_colorplot.colorplot):
             if multiply is None:
                 self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values
             else:
+                # TO DO: Implement keyword multiply that accepts an iterator of length len(self.spectra_list)
                 self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values * multiply
             if over_iv is not None:
-                try:
-                    self.current = pd.concat((spec.data['Current (A)'] for spec in self.spectra_list),axis=1).values - over_iv[0]
-                except KeyError:
-                    self.current = pd.concat((spec.data['Current [AVG] (A)'] for spec in self.spectra_list),axis=1).values - over_iv[0]
+                self.current = pd.concat(((spec.data.get('Current (A)', 0) + spec.data.get('Current [AVG] (A)', 0)) for spec in self.spectra_list),axis=1).values - over_iv[0]
             self.bias = bias
         else:
             if (transform == 'diff') or (transform == 'derivative'):

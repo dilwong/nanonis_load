@@ -91,6 +91,8 @@ class nanonis_3ds():
 
 #Plot Nanonis 3ds data
 #Key press UP and DOWN to change energy
+#
+#TO DO: Copy data to clipboard
 class plot():
 
     def __init__(self, nanonis_3ds, channel, fft = False):
@@ -101,6 +103,8 @@ class plot():
         self.channel = channel
         self.press = None
         self.click = None
+        self.fft = fft
+        self.__nanonis_3ds__ = nanonis_3ds
 
         x_size = self.header['x_size (nm)']
         y_size = self.header['y_size (nm)']
@@ -135,22 +139,7 @@ class plot():
                 key=event.key[4:]
             else:
                 key=event.key
-            if key == 'down':
-                self.free -= 1
-            elif key == 'up':
-                self.free += 1
-            if self.free < 0:
-                self.free = len(self.energy)-1
-            elif self.free >= len(self.energy):
-                self.free = 0
-            self.plot.set_data(np.flipud(self.data[:,:,self.free]))
-            if fft:
-                fft_array = np.absolute(np.fft.fft2(np.flipud(self.data[:,:,self.free])))
-                fft_array = np.fliplr(np.fft.fftshift(fft_array)) # Is this the correct orientation?
-                self.fft_plot.set_data(fft_array)
-            title='Energy = ' + str(self.energy[self.free]) + ' eV'
-            self.ax.set_title(title)
-            self.fig.canvas.draw()
+            self.increment_energy(key)
         def on_press(event):
             if event.inaxes == self.colorbar.ax:
                 self.press = (event.x, event.y, self.colorbar, self.plot)
@@ -223,6 +212,33 @@ class plot():
         transformed_y = transformed_vec[1] + self.header['y_center (nm)']
         print('x = ' + str(transformed_x) + ' nm')
         print('y = ' + str(transformed_y) + ' nm')
+
+    def increment_energy(self, key):
+        if key == 'down':
+            self.free -= 1
+        elif key == 'up':
+            self.free += 1
+        if self.free < 0:
+            self.free = len(self.energy)-1
+        elif self.free >= len(self.energy):
+            self.free = 0
+        self.plot.set_data(np.flipud(self.data[:,:,self.free]))
+        if self.fft:
+            fft_array = np.absolute(np.fft.fft2(np.flipud(self.data[:,:,self.free])))
+            fft_array = np.fliplr(np.fft.fftshift(fft_array)) # Is this the correct orientation?
+            self.fft_plot.set_data(fft_array)
+        title='Energy = ' + str(self.energy[self.free]) + ' eV'
+        self.ax.set_title(title)
+        self.fig.canvas.draw()
+        return (self.fig, )
+
+    # dpi does not work... why?
+    # Needs a MovieWriter
+    def animate(self, key, wait_time = 200, filename = None, dpi = 80, writer = 'pillow'):
+        from matplotlib.animation import FuncAnimation
+        anim = FuncAnimation(self.fig, self.increment_energy, frames=[key] * (len(self.energy) - 0), interval = wait_time) # Fix ordering
+        if filename is not None:
+            anim.save(filename, dpi = dpi, writer = writer)
 
 #Loads and plots 3DS line cuts
 class linecut(interactive_colorplot.colorplot):
