@@ -228,6 +228,8 @@ class colorplot(interactive_colorplot.colorplot):
         bias_shift = kwargs['bias_shift'] if ('bias_shift' in kwargs) else 0
         rasterized = kwargs['rasterized'] if ('rasterized' in kwargs) else False
         colorbar = kwargs['colorbar'] if ('colorbar' in kwargs) else True
+        over_current = kwargs['over_current'] if ('over_current' in kwargs) else None
+        post_transform = kwargs['post_transform'] if ('post_transform' in kwargs) else None
 
         self.arg_list = spectra_list
         self.state_for_update = {}
@@ -312,6 +314,12 @@ class colorplot(interactive_colorplot.colorplot):
 
         if over_iv is not None:
             self.data = self.data/self.current*(self.bias[:,np.newaxis] - over_iv[1])
+        if over_current is not None: # Do not use over_iv and over_current at the same time!!
+            self.current = pd.concat(((spec.data.get('Current (A)', 0) + spec.data.get('Current [AVG] (A)', 0)) for spec in self.spectra_list),axis=1).values - over_current
+            self.data = self.data/self.current
+        if post_transform is not None:
+            self.data = post_transform(self.data)
+        #
 
         # TO DO: This program assumes all spectra have the same bias list.
         #        Implement the ability to handle spectra with different bias lists.
@@ -349,6 +357,22 @@ class colorplot(interactive_colorplot.colorplot):
 
         self.xlist = self.bias
         self.ylist = self.gate
+
+    def std_clim(self, n):
+        mean = np.mean(self.data)
+        std = np.std(self.data)
+        self.clim(mean - n*std, mean + n*std)
+
+    def percentile_clim(self, lower, upper):
+        self.clim(np.percentile(self.data, lower), np.percentile(self.data, upper))
+
+    def whole_range(self):
+        min_bias = np.min(self.bias)
+        max_bias = np.max(self.bias)
+        min_gate = np.min(self.gate)
+        max_gate = np.max(self.gate)
+        self.xlim(min_bias, max_bias)
+        self.ylim(min_gate, max_gate)
 
     def update(self):
 
