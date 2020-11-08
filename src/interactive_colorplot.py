@@ -188,6 +188,7 @@ class drag_bar():
         self.fast = False
         self.waiting = False
         self.updated = False
+        self.__autoscale__ = False
 
         self.colorplot.__draggables__.append(self)
 
@@ -312,6 +313,10 @@ class drag_bar():
             self.updated = False
             self.plot.set_xdata(self.indep_list)
         self.plot.set_ydata(self.data[self.slice_dict['left'],self.slice_dict['right']])
+        if self.__autoscale__:
+            ymin = np.min(self.data[self.slice_dict['left'],self.slice_dict['right']])
+            ymax = np.max(self.data[self.slice_dict['left'],self.slice_dict['right']])
+            self.drag_ax.set_ylim(ymin, ymax)
         self.plot.set_label(str(self.index_value))
         if (len(self.linked_bars) == 0) and (not skip_draw):
             self.drag_ax.legend()
@@ -351,6 +356,12 @@ class drag_bar():
     def join_drag_bars(self, *drag_bar_list): # Only works if colorplots on the same figure, line traces on the same axes
         for bar in drag_bar_list:
             self.linked_bars.append(bar)
+
+    def autoscale_on(self):
+        self.__autoscale__ = True
+
+    def autoscale_off(self):
+        self.__autoscale__ = False
 
     def to_clipboard(self):
         pd.DataFrame([self.indep_list, self.data[self.slice_dict['left'],self.slice_dict['right']]]).transpose().to_clipboard(index=False, header =False)
