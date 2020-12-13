@@ -50,6 +50,7 @@ class spectrum():
 
         #Read the header, build the header
         self.header = {}
+        self.__filename__ = filename
         with open(filename,'r') as file_id:
             header_lines = 1
             while True:
@@ -230,6 +231,7 @@ class colorplot(interactive_colorplot.colorplot):
         colorbar = kwargs['colorbar'] if ('colorbar' in kwargs) else True
         over_current = kwargs['over_current'] if ('over_current' in kwargs) else None
         post_transform = kwargs['post_transform'] if ('post_transform' in kwargs) else None
+        running_index = kwargs['running_index'] if ('running_index' in kwargs) else False
 
         self.arg_list = spectra_list
         self.state_for_update = {}
@@ -295,21 +297,26 @@ class colorplot(interactive_colorplot.colorplot):
         else:
             self.ax = axes
             self.fig = axes.figure
-        if index_range is None:
-            if start is None:
-                index_range = [-1000, 1000]
-            else:
-                if increment is None:
-                    index_range = [start, 1000]
+        if running_index:
+            self.index_list = np.array([int(s.__filename__.split('.')[0].split('_')[-1]) for s in self.spectra_list])
+            self.state_for_update['running_index'] = True
+        else:
+            self.state_for_update['running_index'] = False
+            if index_range is None:
+                if start is None:
+                    index_range = [-1000, 1000]
                 else:
-                    index_range = np.arange(len(self.spectra_list)) * increment + start # increment must be signed
-        if len(index_range) == 2:
-            self.index_list = np.linspace(index_range[0],index_range[1],len(self.spectra_list))
-        if len(index_range) == len(self.spectra_list):
-            self.index_list = np.array(index_range)
-        if gate_as_index and (start is None) and (increment is None):
-            self.index_list = np.array([spec.gate for spec in self.spectra_list])
-            # gate_transform depreciated
+                    if increment is None:
+                        index_range = [start, 1000]
+                    else:
+                        index_range = np.arange(len(self.spectra_list)) * increment + start # increment must be signed
+            if len(index_range) == 2:
+                self.index_list = np.linspace(index_range[0],index_range[1],len(self.spectra_list))
+            if len(index_range) == len(self.spectra_list):
+                self.index_list = np.array(index_range)
+            if gate_as_index and (start is None) and (increment is None):
+                self.index_list = np.array([spec.gate for spec in self.spectra_list])
+        # gate_transform depreciated
         self.gate = self.index_list
 
         if over_iv is not None:
@@ -389,7 +396,10 @@ class colorplot(interactive_colorplot.colorplot):
                 for spec in self.spectra_list:
                     std_ping_remove(spec, self.initial_kwarg_state['ping_remove'])
             bias = self.spectra_list[0].data.iloc[:,0].values # No bias_shift
-            self.index_list = np.array([spec.gate for spec in self.spectra_list])
+            if self.state_for_update['running_index']:
+                self.index_list = np.array([int(s.__filename__.split('.')[0].split('_')[-1]) for s in self.spectra_list])
+            else:
+                self.index_list = np.array([spec.gate for spec in self.spectra_list])
             new_bias = (bias[1:] + bias[:-1]) * 0.5
             new_bias = np.insert(new_bias, 0, bias[0] - (bias[1] - bias[0]) * 0.5)
             new_index_range = (self.index_list[1:] + self.index_list[:-1]) * 0.5
@@ -1337,8 +1347,8 @@ class butterfly():
 
             wat_line = self.__waterfall_ax__.plot(bias, data)
 
-def quick_landau_fan(filename, bias = 0, cmap = None, center = False, width = None, rasterized = False):
+def quick_landau_fan(filename, bias = 0, cmap = None, center = False, width = None, rasterized = False, normalize = False):
 
     fan = landau_fan(filename)
-    fan.plot(bias, cmap = cmap, center = center, width = width, rasterized = rasterized)
+    fan.plot(bias, cmap = cmap, center = center, width = width, rasterized = rasterized, normalize = normalize)
     return fan
