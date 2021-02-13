@@ -240,7 +240,7 @@ class colorplot(interactive_colorplot.colorplot):
         self.__bshift__ = bias_shift
         self.__linecut_event_handlers__ = []
 
-        self.spectra_list = parse_arguments(*spectra_list)
+        self.spectra_list = parse_arguments(*spectra_list) # TO DO: USE CACHE FEATURE OF parse_arguments
         if not self.spectra_list:
             return
 
@@ -384,7 +384,7 @@ class colorplot(interactive_colorplot.colorplot):
     def update(self):
 
         try:
-            self.spectra_list = parse_arguments(*self.arg_list)
+            self.spectra_list = parse_arguments(*self.arg_list) # TO DO: USE CACHE FEATURE OF parse_arguments
 
             # Only works for Input 2 (V) or similar types of data
             for spec in self.spectra_list:
@@ -739,7 +739,7 @@ class colorplot(interactive_colorplot.colorplot):
 
         event_handlers[0] = fig.canvas.mpl_connect('button_press_event', on_click)
 
-def batch_load(basename, file_range = None, attribute_list = None):
+def batch_load(basename, file_range = None, attribute_list = None, cache = None):
 
     if file_range is None:
         file_range = range(9999)
@@ -747,11 +747,18 @@ def batch_load(basename, file_range = None, attribute_list = None):
     file_string = basename + '*.dat'
     file_exist = glob.glob(file_string)
 
-    file_list = []
-    spectrum_array = []
+    if cache is not None:
+        spectrum_array = cache
+        file_list = [c.__filename__ for c in cache]
+    else:
+        file_list = []
+        spectrum_array = []
     for idx, file_number in enumerate(file_range):
         filename = basename + '%0*d' % (5, file_number) + '.dat'
         if filename in file_exist:
+            if cache is not None:
+                if filename in file_list: # Maybe use sets
+                    continue
             file_list.append(filename)
             spectrum_inst = spectrum(filename)
             if attribute_list:
@@ -760,12 +767,17 @@ def batch_load(basename, file_range = None, attribute_list = None):
 
     return (spectrum_array, file_list)
 
-def parse_arguments(*spectra_arguments):
+def parse_arguments(*spectra_arguments, **kwargs):
 
-    spectra = []
+    cache = kwargs['cache'] if ('cache' in kwargs) else None
+
+    if cache is None:
+        spectra = []
+    else:
+        spectra = cache
     for arg in spectra_arguments:
         if type(arg) == str:
-            s, f = batch_load(arg)
+            s, f = batch_load(arg, cache = cache)
             if f == []:
                 print('WARNING: NO FILES WITH BASENAME ' + arg)
             # monotonic keyword depreciated
@@ -1051,7 +1063,7 @@ class landau_fan():
 
     "TO DO: WRITE DOCSTRING"
 
-    def __init__(self, filename):
+    def __init__(self, filename, cache = None, fast = False):
 
         # TO DO: Implement drag_bar
         #interactive_colorplot.colorplot.__init__(self)
@@ -1060,7 +1072,9 @@ class landau_fan():
         self.clow = []
         self.chigh = []
         self.spectra_list = []
+        self.__basenames__ = []
         with open(filename, 'r') as f:
+            f_idx = 0
             for fline in f:
                 field_line = fline.split()
                 try:
@@ -1075,7 +1089,17 @@ class landau_fan():
                     self.chigh.append(float(field_line[2]))
                 except ValueError:
                     self.chigh.append(None)
-                self.spectra_list.append(parse_arguments(*field_line[3:]))
+                self.__basenames__.append(field_line[3:])
+                if (cache is not None) and f_idx < len(cache.__basenames__) and (field_line[3:] == cache.__basenames__[f_idx]):
+                    if fast is False:
+                        self.spectra_list.append(parse_arguments(*field_line[3:], cache = cache.spectra_list[f_idx]))
+                    else:
+                        self.spectra_list.append(cache.spectra_list[f_idx])
+                else:
+                    self.spectra_list.append(parse_arguments(*field_line[3:]))
+                f_idx += 1
+        if fast:
+            self.spectra_list[-1] = parse_arguments(*self.__basenames__[-1])
 
         self.num_fields = len(self.spectra_list)
         self.__shift_gate__ = np.zeros(self.num_fields)
@@ -1159,6 +1183,12 @@ class landau_fan():
     def get_clim_for_B(self, B):
         nearest_B_index = self.get_index_for_B(B)
         return self.cond_lines[nearest_B_index].get_clim()
+
+    def xlim(self, x_min, x_max):
+        self.ax.set_xlim(x_min, x_max)
+
+    def ylim(self, y_min, y_max):
+        self.ax.set_ylim(y_min, y_max)
 
     def add_gate_for_B(self, gate_shift, B):
         nearest_B_index = self.get_index_for_B(B)
@@ -1347,8 +1377,8 @@ class butterfly():
 
             wat_line = self.__waterfall_ax__.plot(bias, data)
 
-def quick_landau_fan(filename, bias = 0, cmap = None, center = False, width = None, rasterized = False, normalize = False):
+def quick_landau_fan(filename, bias = 0, cmap = None, center = False, width = None, rasterized = False, normalize = False, cache = None, fast = False):
 
-    fan = landau_fan(filename)
+    fan = landau_fan(filename, cache = cache , fast = fast)
     fan.plot(bias, cmap = cmap, center = center, width = width, rasterized = rasterized, normalize = normalize)
     return fan
