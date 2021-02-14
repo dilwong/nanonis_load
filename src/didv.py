@@ -989,7 +989,7 @@ def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, c
             else:
                 unique_gates.append(gate[rev_index])
         gate_index_between = [enum_g[0] for enum_g in enumerate(gate_cp) if normalize[0] <= enum_g[1] <= normalize[1]]
-        data_sum = np.sum(data[gate_index_between, :]) / (len(gate_index_between) * nbiases)
+        data_sum = np.nanmean(data[gate_index_between, :])
         if parent is not None:
             parent[0].__norm_scale__[parent[1]] = data_sum
         data = data/data_sum
@@ -1170,6 +1170,10 @@ class landau_fan():
                     fbplot.set_clim(self.clow[idx], self.chigh[idx])
                 else:
                     fbplot.set_clim(0, self.chigh[idx])
+
+    def colormap(self,cmap):
+        for fbplot in self.cond_lines:
+            fbplot.set_cmap(cmap)
 
     def clim_for_B(self, c_min, c_max, B):
         nearest_B_index = self.get_index_for_B(B)
