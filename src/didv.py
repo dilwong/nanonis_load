@@ -880,7 +880,7 @@ class transform_colorplot(interactive_colorplot.colorplot):
         return self.ylist
     
     @index_list.setter
-    def gate(self, value):
+    def index_list(self, value):
         self.ylist = value
 
     @property
