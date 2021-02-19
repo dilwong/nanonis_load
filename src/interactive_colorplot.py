@@ -9,7 +9,7 @@ import matplotlib.colors
 import numpy as np
 import pandas as pd
 
-class colorplot():
+class colorplot(object):
 
     def __init__(self):
         self.__draggables__ = []
@@ -52,11 +52,52 @@ class colorplot():
             self.stop_define_colormap()
             self.__colorbar_rectangles__ = []
 
+    # TO DO: Refactor so that self.bias, self.index_list are more generic
+    #        i.e. no references to bias or gate
+    #        Use @property to set bias and gate
     def contour(self):
         c_x, c_y = np.meshgrid(self.bias, self.index_list)
         c_x = c_x.T
         c_y = c_y.T
         self.ax.contour(c_x, c_y, self.data, cmap = 'jet')
+
+    def std_clim(self, n):
+        #mean = np.mean(self.data)
+        #std = np.std(self.data)
+        mean = np.nanmean(self.data)
+        std = np.nanstd(self.data)
+        self.clim(mean - n*std, mean + n*std)
+
+    def percentile_clim(self, lower, upper):
+        #self.clim(np.percentile(self.data, lower), np.percentile(self.data, upper))
+        self.clim(np.nanpercentile(self.data, lower * 100), np.nanpercentile(self.data, upper * 100))
+
+    def whole_range(self):
+        min_bias = np.min(self.bias)
+        max_bias = np.max(self.bias)
+        min_index_list = np.min(self.index_list)
+        max_index_list = np.max(self.index_list)
+        self.xlim(min_bias, max_bias)
+        self.ylim(min_index_list, max_index_list)
+
+    def save_data_to_file(self, filename):
+
+        x, y = np.meshgrid(self.bias, self.index_list)
+        x = x.T
+        y = y.T
+        try:
+            bias_shift_len = len(self.__bshift__)
+            if bias_shift_len == len(self.index_list):
+                for idx, shift_val in enumerate(self.__bshift__):
+                    x[:,idx] = x[:,idx] + shift_val
+        except TypeError:
+            pass
+        x = np.reshape(x, (x.size, 1))
+        y = np.reshape(y, (y.size, 1))
+        z = np.reshape(self.data, (self.data.size, 1))
+        cols = np.append(x, y, axis = 1)
+        cols = np.append(cols, z, axis = 1)
+        np.savetxt(filename, cols)
 
     def drag_bar(self, direction = 'horizontal', locator = False, axes = None, color = None):
 
@@ -221,7 +262,7 @@ class drag_bar():
         else:
             self.locator_axes = None
 
-        self.colorplot_line.set_picker(5)
+        self.colorplot_line.set_pickradius(5)
         self.refresh_legend()
 
         def on_press(event):
@@ -350,7 +391,7 @@ class drag_bar():
         for bar in self.colorplot.__draggables__:
             if bar.drag_ax is self.drag_ax:
                 bar.drag_ax.get_legend().get_lines()[bar.legend_order].set_visible(True)
-                bar.drag_ax.get_legend().get_lines()[bar.legend_order].set_picker(5)
+                bar.drag_ax.get_legend().get_lines()[bar.legend_order].set_pickradius(5)
                 bar.legend = bar.drag_ax.get_legend().get_lines()[bar.legend_order]
 
     def join_drag_bars(self, *drag_bar_list): # Only works if colorplots on the same figure, line traces on the same axes

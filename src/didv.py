@@ -35,7 +35,7 @@ from matplotlib import cm
 
 try:
     from . import interactive_colorplot
-except ImportError:
+except (ImportError, ValueError):
     import interactive_colorplot
 
 import traceback
@@ -204,6 +204,7 @@ class plot():
     def ylim(self, y_min, y_max):
         self.ax.set_ylim(y_min, y_max)
 
+ # TO DO: Change self.gate, self.bias, self.index_list to @property getters/setters
 class colorplot(interactive_colorplot.colorplot):
 
     "TO DO: WRITE DOCSTRING"
@@ -365,22 +366,6 @@ class colorplot(interactive_colorplot.colorplot):
         self.xlist = self.bias
         self.ylist = self.gate
 
-    def std_clim(self, n):
-        mean = np.mean(self.data)
-        std = np.std(self.data)
-        self.clim(mean - n*std, mean + n*std)
-
-    def percentile_clim(self, lower, upper):
-        self.clim(np.percentile(self.data, lower), np.percentile(self.data, upper))
-
-    def whole_range(self):
-        min_bias = np.min(self.bias)
-        max_bias = np.max(self.bias)
-        min_gate = np.min(self.gate)
-        max_gate = np.max(self.gate)
-        self.xlim(min_bias, max_bias)
-        self.ylim(min_gate, max_gate)
-
     def update(self):
 
         try:
@@ -451,25 +436,6 @@ class colorplot(interactive_colorplot.colorplot):
         self.fig.canvas.mpl_connect('close_event', handle_close)
 
         thread.start_new_thread(self.update_loop, (wait_time, ))
-
-    def save_data_to_file(self, filename):
-
-        x, y = np.meshgrid(self.bias, self.index_list)
-        x = x.T
-        y = y.T
-        try:
-            bias_shift_len = len(self.__bshift__)
-            if bias_shift_len == len(self.index_list):
-                for idx, shift_val in enumerate(self.__bshift__):
-                    x[:,idx] = x[:,idx] + shift_val
-        except TypeError:
-            pass
-        x = np.reshape(x, (x.size, 1))
-        y = np.reshape(y, (y.size, 1))
-        z = np.reshape(self.data, (self.data.size, 1))
-        cols = np.append(x, y, axis = 1)
-        cols = np.append(cols, z, axis = 1)
-        np.savetxt(filename, cols)
 
     # Finds peaks and clusters them according to DBSCAN algorithm with parameters eps and min_samples
     # sigma controls the Gaussian smoothing of each index line before finding the local maxima
@@ -759,11 +725,14 @@ def batch_load(basename, file_range = None, attribute_list = None, cache = None)
             if cache is not None:
                 if filename in file_list: # Maybe use sets
                     continue
-            file_list.append(filename)
-            spectrum_inst = spectrum(filename)
-            if attribute_list:
-                spectrum_inst.header['attribute'] = attribute_list[idx]
-            spectrum_array.append(spectrum_inst)
+            try:
+                spectrum_inst = spectrum(filename)
+                file_list.append(filename)
+                if attribute_list:
+                    spectrum_inst.header['attribute'] = attribute_list[idx]
+                spectrum_array.append(spectrum_inst)
+            except IOError:
+                continue
 
     return (spectrum_array, file_list)
 
@@ -795,6 +764,132 @@ def parse_arguments(*spectra_arguments, **kwargs):
 def quick_colorplot(*args, **kwargs):
 
     return colorplot(*args, **kwargs)
+
+class transform_colorplot(interactive_colorplot.colorplot):
+
+    def __init__(self, *args, **kwargs):
+
+        interactive_colorplot.colorplot.__init__(self)
+        self.terminate = False
+        self.kwargs = kwargs
+        pcolor_cm = kwargs['cmap'] if ('cmap' in kwargs) else 'RdYlBu_r'
+        rasterized = kwargs['rasterized'] if ('rasterized' in kwargs) else False
+        
+        if len(args) < 2:
+            raise TypeError("didv.transform_colorplot takes at least two arguments")
+        if not callable(args[0]):
+            raise TypeError("First argument is not a callable function")
+        self.func = args[0]
+        self.__cplots__ = args[1:]
+        self.xlist = self.__cplots__[0].bias # Assumes bias for all self.__cplots__ are the same
+        self.compute_data()
+        self.mesh()
+        self.fig = plt.figure()
+        self.ax = self.fig.add_subplot(111)
+        self.pcolor = self.ax.pcolormesh(self.__pseudocoord_x__, self.__pseudocoord_y__, self.data, cmap = pcolor_cm, rasterized = rasterized)
+        self.original_cmap = self.pcolor.cmap
+        self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
+        self.ax.set_xlabel('Sample Bias (V)')
+        self.ax.set_ylabel('Gate (V)')
+        self.__x_axes_limits__ = list(self.ax.get_xlim())
+        self.__y_axes_limits__ = list(self.ax.get_ylim())
+
+    def compute_data(self):
+
+        index_list_tmp = []
+        data_tmp = []
+        for y_idx, y_val in enumerate(self.__cplots__[0].index_list):
+            curr_row = []
+            try:
+                for cplot_idx, cplot in enumerate(self.__cplots__):
+                    # if cplot_idx == 0:
+                    #     curr_row.append(cplot.data[:,y_idx])
+                    #     continue
+                    # # Use didv.query?
+                    # new_ind = np.where(cplot.index_list == y_val)[0][0]
+                    new_ind = np.where(cplot.index_list == y_val)[0][-1]
+                    curr_row.append(cplot.data[:, new_ind])
+            except IndexError:
+                continue
+            data_tmp.append(self.func(*curr_row))
+            index_list_tmp.append(y_val)
+        self.ylist = np.array(index_list_tmp)
+        self.data = np.array(data_tmp).T
+
+    def mesh(self):
+        new_x = (self.xlist[1:] + self.xlist[:-1]) * 0.5
+        new_x = np.insert(new_x, 0, self.xlist[0] - (self.xlist[1] - self.xlist[0]) * 0.5)
+        new_y = (self.ylist[1:] + self.ylist[:-1]) * 0.5
+        new_y = np.insert(new_y, 0, self.ylist[0] - (self.ylist[1] - self.ylist[0]) * 0.5)
+        new_x = np.append(new_x, self.xlist[-1] + (self.xlist[-1] - self.xlist[-2]) * 0.5)
+        new_y = np.append(new_y, self.ylist[-1] + (self.ylist[-1] - self.ylist[-2]) * 0.5)
+        x, y = np.meshgrid(new_x, new_y) # Will handle non-linear bias array
+        self.__pseudocoord_x__ = x.T
+        self.__pseudocoord_y__ = y.T
+
+    def update(self):
+
+        try:
+            self.compute_data()
+            self.mesh()
+            cmap = self.pcolor.cmap
+            clim_min, clim_max = self.pcolor.get_clim()
+            self.colorbar.remove()
+            self.pcolor.remove()
+            self.pcolor = self.ax.pcolormesh(self.__pseudocoord_x__, self.__pseudocoord_y__, self.data, cmap = cmap)
+            self.clim(clim_min, clim_max)
+            self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
+            for dragbar in self.__draggables__:
+                dragbar.update_data()
+            self.fig.canvas.draw()
+        except:
+            err_detect = traceback.format_exc()
+            print(err_detect)
+            raise
+
+    def update_loop(self, wait_time):
+
+        import time
+        while not self.terminate:
+            time.sleep(wait_time)
+            self.update()
+
+    def refresh(self, wait_time = 5):
+
+        try:
+            import thread
+        except ModuleNotFoundError:
+            import _thread as thread
+
+        def handle_close(event):
+            self.terminate = True
+        self.fig.canvas.mpl_connect('close_event', handle_close)
+
+        thread.start_new_thread(self.update_loop, (wait_time, ))
+
+    @property
+    def gate(self):
+        return self.ylist
+    
+    @gate.setter
+    def gate(self, value):
+        self.ylist = value
+
+    @property
+    def index_list(self):
+        return self.ylist
+    
+    @index_list.setter
+    def gate(self, value):
+        self.ylist = value
+
+    @property
+    def bias(self):
+        return self.xlist
+    
+    @bias.setter
+    def bias(self, value):
+        self.xlist = value
 
 class multi_colorplot():
 
@@ -1058,6 +1153,7 @@ def fixed_gate_plot(spectra_list, gate, lower_bound, upper_bound, axes = None, c
     return axes.pcolormesh(x, y, data, cmap = cmap, rasterized = rasterized)
 
 # TO DO: Implement add_data
+# TO DO: Implement drag_bar
 #class landau_fan(interactive_colorplot.colorplot):
 class landau_fan():
 
