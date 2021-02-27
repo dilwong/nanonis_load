@@ -233,6 +233,7 @@ class colorplot(interactive_colorplot.colorplot):
         over_current = kwargs['over_current'] if ('over_current' in kwargs) else None
         post_transform = kwargs['post_transform'] if ('post_transform' in kwargs) else None
         running_index = kwargs['running_index'] if ('running_index' in kwargs) else False
+        tilt_by_bias = kwargs['tilt_by_bias'] if ('tilt_by_bias' in kwargs) else False
 
         self.arg_list = spectra_list
         self.state_for_update = {}
@@ -351,6 +352,11 @@ class colorplot(interactive_colorplot.colorplot):
                     x[:,idx] = x[:,idx] + shift_val
         except TypeError:
             pass
+        if tilt_by_bias:
+            y = y - new_bias.reshape((new_bias.size, 1))
+            self.state_for_update['tilt_by_bias'] = True
+        else:
+            self.state_for_update['tilt_by_bias'] = False
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = pcolor_cm, rasterized = rasterized)
         self.original_cmap = self.pcolor.cmap
         if colorbar:
@@ -394,6 +400,8 @@ class colorplot(interactive_colorplot.colorplot):
             x, y = np.meshgrid(new_bias, new_index_range) # Will handle non-linear bias array
             x = x.T
             y = y.T
+            if self.state_for_update['tilt_by_bias']:
+                y = y - new_bias.reshape((new_bias.size, 1))
             cmap = self.pcolor.cmap
             clim_min, clim_max = self.pcolor.get_clim()
             self.bias = bias
@@ -826,6 +834,7 @@ class transform_colorplot(interactive_colorplot.colorplot):
         x, y = np.meshgrid(new_x, new_y) # Will handle non-linear bias array
         self.__pseudocoord_x__ = x.T
         self.__pseudocoord_y__ = y.T
+        # TO DO: Implement kwargs['tilt_by_bias'] and bias_shift
 
     def update(self):
 
