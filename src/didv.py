@@ -112,7 +112,8 @@ class plot():
                                 axes = None, \
                                 color = None, \
                                 bias_shift = 0, \
-                                gate_as_index = True, **kwargs):
+                                gate_as_index = True, \
+                                legend = True, **kwargs):
 
         if waterfall != 0: # Does not work if spectra is a non-list iterator
             if dark:
@@ -165,35 +166,37 @@ class plot():
             spec_data.plot(**plot_args)
 
         #Make a legend
-        box = self.ax.get_position()
-        self.ax.set_position([box.x0, box.y0, box.width * 0.9, box.height])
-        if (waterfall == 0) or (np.sign(increment) < 0):
-            self.legend = self.ax.legend(loc = 'center left', bbox_to_anchor=(1, 0.5))
-            plot_lines = self.ax.get_lines()
-        else:
-            handles, labels = self.ax.get_legend_handles_labels()
-            self.legend = self.ax.legend(handles[::-1], labels[::-1], loc = 'center left', bbox_to_anchor=(1, 0.5))
-            plot_lines = self.ax.get_lines()
-            plot_lines.reverse()
-        legend_lines = self.legend.get_lines()
-        line_map = dict()
-        for legend_line, plot_line in zip(legend_lines,plot_lines):
-            legend_line.set_picker(5)
-            line_map[legend_line] = plot_line
-
-        def pick_line(event):
-            legend_line = event.artist
-            plot_line = line_map[legend_line]
-            visibility = not plot_line.get_visible()
-            plot_line.set_visible(visibility)
-            if visibility:
-                legend_line.set_alpha(1)
+        if legend:
+            box = self.ax.get_position()
+            self.ax.set_position([box.x0, box.y0, box.width * 0.9, box.height])
+            if (waterfall == 0) or (np.sign(increment) < 0):
+                self.legend = self.ax.legend(loc = 'center left', bbox_to_anchor=(1, 0.5))
+                plot_lines = self.ax.get_lines()
             else:
-                legend_line.set_alpha(0.2)
-            self.fig.canvas.draw()
+                handles, labels = self.ax.get_legend_handles_labels()
+                self.legend = self.ax.legend(handles[::-1], labels[::-1], loc = 'center left', bbox_to_anchor=(1, 0.5))
+                plot_lines = self.ax.get_lines()
+                plot_lines.reverse()
+            legend_lines = self.legend.get_lines()
+            line_map = dict()
+            for legend_line, plot_line in zip(legend_lines,plot_lines):
+                legend_line.set_picker(True)
+                legend_line.set_pickradius(5)
+                line_map[legend_line] = plot_line
 
-        self.pick_line = pick_line
-        self.fig.canvas.mpl_connect('pick_event', pick_line)
+            def pick_line(event):
+                legend_line = event.artist
+                plot_line = line_map[legend_line]
+                visibility = not plot_line.get_visible()
+                plot_line.set_visible(visibility)
+                if visibility:
+                    legend_line.set_alpha(1)
+                else:
+                    legend_line.set_alpha(0.2)
+                self.fig.canvas.draw()
+
+            self.pick_line = pick_line
+            self.fig.canvas.mpl_connect('pick_event', pick_line)
 
         if dark:
             plt.style.use('default')
