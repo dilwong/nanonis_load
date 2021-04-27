@@ -160,7 +160,10 @@ class plot():
                 if color is None:
                     plot_args['color'] = tuple(cmap[idx])
                 else:
-                    plot_args['color'] = color
+                    if isinstance(color, list) and isinstance(spectra, list) and (len(color) == len(spectra)):
+                        plot_args['color'] = color[idx]
+                    else:
+                        plot_args['color'] = color
             if bias_shift != 0:
                 spec_data.iloc[:,0] -= bias_shift
             spec_data.plot(**plot_args)
@@ -292,6 +295,12 @@ class colorplot(interactive_colorplot.colorplot):
             if (transform == 'diff') or (transform == 'derivative'):
                 self.data = np.diff(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values, axis = diff_axis)
                 self.bias = bias[:-1]
+                pcolor_cm = 'seismic'
+            elif (transform == 'second_derivative'):
+                self.data = np.diff(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values, axis = diff_axis)
+                self.data = np.diff(self.data, axis = diff_axis)
+                bias = bias[:-2]
+                self.bias = bias
                 pcolor_cm = 'seismic'
             else:
                 self.data = transform(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values)
@@ -785,7 +794,7 @@ class transform_colorplot(interactive_colorplot.colorplot):
         self.kwargs = kwargs
         pcolor_cm = kwargs['cmap'] if ('cmap' in kwargs) else 'RdYlBu_r'
         rasterized = kwargs['rasterized'] if ('rasterized' in kwargs) else False
-        
+
         if len(args) < 2:
             raise TypeError("didv.transform_colorplot takes at least two arguments")
         if not callable(args[0]):
@@ -882,7 +891,7 @@ class transform_colorplot(interactive_colorplot.colorplot):
     @property
     def gate(self):
         return self.ylist
-    
+
     @gate.setter
     def gate(self, value):
         self.ylist = value
@@ -890,7 +899,7 @@ class transform_colorplot(interactive_colorplot.colorplot):
     @property
     def index_list(self):
         return self.ylist
-    
+
     @index_list.setter
     def index_list(self, value):
         self.ylist = value
@@ -898,7 +907,7 @@ class transform_colorplot(interactive_colorplot.colorplot):
     @property
     def bias(self):
         return self.xlist
-    
+
     @bias.setter
     def bias(self, value):
         self.xlist = value
