@@ -246,6 +246,8 @@ class linecut(interactive_colorplot.colorplot):
     def __init__(self, filename, channel):
 
         interactive_colorplot.colorplot.__init__(self)
+        self.sxm_fig = None
+        self.sxm_data = None
 
         #Load data with filename
         self.nanonis_3ds = nanonis_3ds(filename)
@@ -282,6 +284,17 @@ class linecut(interactive_colorplot.colorplot):
         self.xlist = self.bias
         self.ylist = self.dist
 
+    def point_transform(self, x, y):
+        if self.sxm_data is None:
+            return None
+        theta = np.radians(self.sxm_data.header['angle'])
+        R = np.array(((np.cos(theta), -np.sin(theta)), (np.sin(theta), np.cos(theta))))
+        transformed = (x - self.sxm_data.header['x_center (nm)'], y - self.sxm_data.header['y_center (nm)'])
+        transformed = R.dot(transformed)
+        transformed_x = transformed[0] + self.sxm_data.header['x_range (nm)'] * 0.5
+        transformed_y = transformed[1] + self.sxm_data.header['y_range (nm)'] * 0.5
+        return (transformed_x, transformed_y)
+
     def show_image(self, filename, flatten = True, subtract_plane = False):
 
         try:
@@ -292,16 +305,7 @@ class linecut(interactive_colorplot.colorplot):
         self.sxm_data = sxm.sxm(filename)
         self.sxm_fig = sxm.plot(self.sxm_data, 'Z (m)', flatten = flatten, subtract_plane = subtract_plane)
 
-        def point_transform(x, y):
-            theta = np.radians(self.sxm_data.header['angle'])
-            R = np.array(((np.cos(theta), -np.sin(theta)), (np.sin(theta), np.cos(theta))))
-            transformed = (x - self.sxm_data.header['x_center (nm)'], y - self.sxm_data.header['y_center (nm)'])
-            transformed = R.dot(transformed)
-            transformed_x = transformed[0] + self.sxm_data.header['x_range (nm)'] * 0.5
-            transformed_y = transformed[1] + self.sxm_data.header['y_range (nm)'] * 0.5
-            return (transformed_x, transformed_y)
-
-        transformed_pts = [point_transform(x, y) for x, y in zip(self.x_values, self.y_values)]
+        transformed_pts = [self.point_transform(x, y) for x, y in zip(self.x_values, self.y_values)]
         x_values, y_values = zip(*transformed_pts)
         self.transformed_x_values = x_values
         self.transformed_y_values = y_values
@@ -316,14 +320,32 @@ class linecut(interactive_colorplot.colorplot):
                     bar.sxm_dot
                 except AttributeError:
                     bar.sxm_dot = True
-                    def slide_circle():
+                    def slide_circle(input_bar = bar):
                         try:
-                            bar.sxm_circle.center = (bar.sxm.transformed_x_values[bar.index], bar.sxm.transformed_y_values[bar.index])
-                            bar.sxm.sxm_fig.fig.canvas.draw() # TO DO: Blit for speed
+                            input_bar.sxm_circle.center = (input_bar.sxm.transformed_x_values[input_bar.index], input_bar.sxm.transformed_y_values[input_bar.index])
+                            input_bar.sxm.sxm_fig.fig.canvas.draw() # TO DO: Blit for speed
                         except KeyError:
                             pass
                     bar.functions.append(slide_circle)
         self.show_image_set = True
+
+    def drag_bar(self, direction = 'horizontal', locator = False, axes = None, color = None):
+        
+        dbar = super(linecut, self).drag_bar(direction = direction, locator = locator, axes = axes, color = color)
+
+        if (self.sxm_fig is not None) and (dbar.direction[0] == 'h'):
+            dbar.sxm_circle = matplotlib.patches.Circle((self.transformed_x_values[dbar.index], self.transformed_y_values[dbar.index]), radius = 0.5, color = dbar.color, zorder = 10)
+            self.sxm_fig.ax.add_patch(dbar.sxm_circle)
+            dbar.sxm = self
+            def slide_circle(input_bar = dbar):
+                try:
+                    input_bar.sxm_circle.center = (input_bar.sxm.transformed_x_values[input_bar.index], input_bar.sxm.transformed_y_values[input_bar.index])
+                    input_bar.sxm.sxm_fig.fig.canvas.draw() # TO DO: Blit for speed
+                except KeyError:
+                    pass
+            dbar.functions.append(slide_circle)
+        
+        return dbar
 
 def quick_plot(filename, **kwargs):
 

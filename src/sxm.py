@@ -98,7 +98,8 @@ class plot():
             # TO DO: Check for non-square images.  x_pixels and y_pixels may need to be reversed...
             plane = np.reshape(reg.predict(np.vstack((x.flatten(),y.flatten())).T), (x_pixels, y_pixels))
             image_data = image_data - plane
-        self.pcolor = self.ax.pcolormesh(y, x, image_data.T, cmap = 'copper') # pcolormesh chops off last column and row here
+        # shading = 'auto' in the pcolormesh command forces pcolormesh to accept x, y with the same dimensions as image_data.T
+        self.pcolor = self.ax.pcolormesh(y, x, image_data.T, cmap = 'copper', shading = 'auto') # pcolormesh chops off last column and row here
         self.fig.colorbar(self.pcolor, ax = self.ax)
         self.image_data = image_data
 
