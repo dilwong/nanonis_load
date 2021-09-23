@@ -65,14 +65,14 @@ class sxm():
 class plot():
 
     #This class is named after plot_sxm.m
-    def __init__(self, sxm_data, channel, direction = 0, flatten = True):
+    def __init__(self, sxm_data, channel, direction = 0, flatten = True, subtract_plane = False):
 
         self.data = sxm_data
 
         image_data = np.copy(sxm_data.data[channel][direction])
         avg_dat = image_data[~np.isnan(image_data)].mean()
         image_data[np.isnan(image_data)] = avg_dat
-        if flatten:
+        if (flatten == True) and (subtract_plane == False):
             image_data=scipy.signal.detrend(image_data)
 
         #Flip upside down if image was taken scanning down
@@ -92,6 +92,12 @@ class plot():
         y, x = np.mgrid[0:x_range:x_pixels*1j,0:y_range:y_pixels*1j]
         #x = x.T
         #y = y.T
+        if subtract_plane == True:
+            from sklearn.linear_model import LinearRegression
+            reg = LinearRegression().fit(np.vstack((x.flatten(),y.flatten())).T, image_data.flatten())
+            # TO DO: Check for non-square images.  x_pixels and y_pixels may need to be reversed...
+            plane = np.reshape(reg.predict(np.vstack((x.flatten(),y.flatten())).T), (x_pixels, y_pixels))
+            image_data = image_data - plane
         self.pcolor = self.ax.pcolormesh(y, x, image_data.T, cmap = 'copper') # pcolormesh chops off last column and row here
         self.fig.colorbar(self.pcolor, ax = self.ax)
         self.image_data = image_data

@@ -282,7 +282,7 @@ class linecut(interactive_colorplot.colorplot):
         self.xlist = self.bias
         self.ylist = self.dist
 
-    def show_image(self, filename):
+    def show_image(self, filename, flatten = True, subtract_plane = False):
 
         try:
             from . import sxm
@@ -290,7 +290,7 @@ class linecut(interactive_colorplot.colorplot):
             import sxm
 
         self.sxm_data = sxm.sxm(filename)
-        self.sxm_fig = sxm.plot(self.sxm_data, 'Z (m)')
+        self.sxm_fig = sxm.plot(self.sxm_data, 'Z (m)', flatten = flatten, subtract_plane = subtract_plane)
 
         def point_transform(x, y):
             theta = np.radians(self.sxm_data.header['angle'])
