@@ -29,6 +29,7 @@ import numpy as np
 import numpy.ma as ma
 import glob
 
+import time
 import traceback
 import sys
 if sys.version_info.major == 2:
@@ -65,6 +66,10 @@ class landau_fan():
         self.colormap(cmap, set = False)
         self.terminate = False
         self.__draggables__ = []
+        self.__moving__ = False
+        self.__updating__ = False
+        # self.__lock__ = thread.allocate_lock()
+        self.__lock__ = self
         
         self.__load_data__(cache = cache)
 
@@ -98,7 +103,8 @@ class landau_fan():
         #         self.ax.fill(*zip(*polygon), color = mapping.to_rgba(self.values[idx]))
 
         # # Use Delaunay Triangulation
-        # self.plot = self.ax.tripcolor(*zip(*self.data), cmap = self.cmap, rasterized = self.rasterized)
+        # xt, yt, zt, _, _ = zip(*self.data)
+        # self.plot = self.ax.tripcolor(xt, yt, zt, cmap = self.cmap, rasterized = self.rasterized)
 
         x_temp, y_temp = self.__mesh__()
         self.pcolor = self.ax.pcolormesh(x_temp, y_temp, self.z, cmap = self.cmap, rasterized = self.rasterized)
@@ -146,7 +152,7 @@ class landau_fan():
                 spec.loop_idxs = [int(n) for n in spec.__filename__.split('.')[0].split('_')[-2:]]
                 self.spectra_list.append(spec)
         self.nSpectra = len(self.spectra_list)
-        self.data = sorted([(s.gate, s.Bz, s.didv_value) for s in self.spectra_list])
+        self.data = sorted([(s.gate, s.Bz, s.didv_value, s.loop_idxs[0], s.loop_idxs[1]) for s in self.spectra_list])
 
         # Construct self.x, self.y, and self.z as rectangular arrays with the same dimensions
         x_values = sorted(list(set([elem[0] for elem in self.data])))
@@ -192,13 +198,37 @@ class landau_fan():
         return (x_temp, y_temp)
     
     def xlim(self, x_min, x_max):
-        self.ax.set_xlim(x_min, x_max)
+        try:
+            self.__lock__.acquire()
+            self.ax.set_xlim(x_min, x_max)
+        except:
+            err_detect = traceback.format_exc()
+            print(err_detect)
+            raise
+        finally:
+            self.__lock__.release()
 
     def ylim(self, y_min, y_max):
-        self.ax.set_ylim(y_min, y_max)
+        try:
+            self.__lock__.acquire()
+            self.ax.set_ylim(y_min, y_max)
+        except:
+            err_detect = traceback.format_exc()
+            print(err_detect)
+            raise
+        finally:
+            self.__lock__.release()
 
     def clim(self, c_min, c_max):
-        self.pcolor.set_clim(c_min, c_max)
+        try:
+            self.__lock__.acquire()
+            self.pcolor.set_clim(c_min, c_max)
+        except:
+            err_detect = traceback.format_exc()
+            print(err_detect)
+            raise
+        finally:
+            self.__lock.release()
 
     def colormap(self, cmap, set = True):
         if type(cmap) == np.ndarray:
@@ -208,14 +238,21 @@ class landau_fan():
         if set:
             self.pcolor.set_cmap(self.cmap)
 
+    def acquire(self): # Dummy method that does nothing
+        pass
+
+    def release(self): # Dummy method that does nothing
+        pass
+
     def update_loop(self, wait_time):
 
-        import time
         while not self.terminate:
             time.sleep(wait_time)
+            while(self.__moving__):
+                time.sleep(0.5)
             self.update()
 
-    def refresh(self, wait_time = 5):
+    def refresh(self, wait_time = 10):
 
         def handle_close(event):
             self.terminate = True
@@ -225,6 +262,8 @@ class landau_fan():
 
     def update(self):
         try:
+            self.__lock__.acquire()
+            self.__updating__ = True
             self.__load_data__(cache = 'update')
             x_temp, y_temp = self.__mesh__()
             clim_min, clim_max = self.pcolor.get_clim()
@@ -237,6 +276,9 @@ class landau_fan():
             err_detect = traceback.format_exc()
             print(err_detect)
             raise
+        finally:
+            self.__updating__ = False
+            self.__lock__.release()
 
     def filter_data(self, axis, value, error):
         if (axis[0].upper() == 'X') or (axis[0].upper() == 'V'):
@@ -263,7 +305,7 @@ class landau_fan():
 class drag_bar():
 
     def __init__(self, parent, direction = 'h', axes = None, color = '#1f77b4', initial_value = 0, step = None, error = 0, marker = True):
-
+        
         self.parent = parent
         self.parent.__draggables__.append(self)
         self.parent.fig.active_drag_bar = self
@@ -276,173 +318,215 @@ class drag_bar():
         self.press = False
         self.__autoscale__ = False
 
-        self.typicalDeltaX = np.mean(self.parent.x[1:,:]-self.parent.x[:-1,:])
-        self.typicalDeltaY = np.mean(self.parent.y[:,1:]-self.parent.y[:,:-1])
-        if step is None:
-            if (self.direction[0] == 'h') or (self.direction[0] == 't'):
-                self.step = self.typicalDeltaY
+        try:
+            self.__lock__ = self.parent.__lock__
+            self.__lock__.acquire()
+
+            self.typicalDeltaX = np.mean(self.parent.x[1:,:]-self.parent.x[:-1,:])
+            self.typicalDeltaY = np.mean(self.parent.y[:,1:]-self.parent.y[:,:-1])
+            if step is None:
+                if (self.direction[0] == 'h') or (self.direction[0] == 't'):
+                    self.step = self.typicalDeltaY
+                elif self.direction[0] == 'v':
+                    self.step = self.typicalDeltaX
+            else:
+                self.step = step
+            self.minX = np.min(self.parent.x)
+            self.maxX = np.max(self.parent.x)
+            self.minY = np.min(self.parent.y)
+            self.maxY = np.max(self.parent.y)
+
+            if axes is None:
+                self.drag_fig = plt.figure()
+                self.drag_ax = self.drag_fig.add_subplot(111)
+            else:
+                self.drag_ax = axes
+                self.drag_fig = axes.figure
+
+            indepVar = []
+            dependVar = []
+            ignoredVar = []
+            if self.direction[0] == 'h':
+                # axline_function = self.parent.ax.axhline
+                data = self.parent.filter_data('Y', self.current_value, self.error)
+                if len(data) != 0:
+                    indepVar, ignoredVar, dependVar, _, _ = zip(*data)
+                    self.parent_line = self.parent.ax.plot(indepVar, ignoredVar, color = self.color)[0]
+                else:
+                    self.parent_line = self.parent.ax.plot([self.minX, self.maxX], [self.current_value, self.current_value], color = self.color)[0]
             elif self.direction[0] == 'v':
-                self.step = self.typicalDeltaX
-        else:
-            self.step = step
+                # axline_function = self.parent.ax.axvline
+                data = self.parent.filter_data('X', self.current_value, self.error)
+                if len(data) != 0:
+                    ignoredVar, indepVar, dependVar, _, _ = zip(*data)
+                    self.parent_line = self.parent.ax.plot(ignoredVar, indepVar, color = self.color)[0]
+                else:
+                    self.parent_line = self.parent.ax.plot([self.current_value, self.current_value], [self.minY, self.maxY], color = self.color)[0]
+            elif self.direction[0] == 't':
+                # axline_function = self.parent.ax.axhline
+                nearestY_tuple = min(self.parent.data, key = lambda elem: abs(elem[1] - self.current_value))
+                nearestY = nearestY_tuple[3]
+                data = sorted([elem for elem in self.parent.data if elem[3] == nearestY], key = lambda elem: elem[0])
+                if len(data) != 0:
+                    indepVar, ignoredVar, dependVar, _, _ = zip(*data)
+                    self.parent_line = self.parent.ax.plot(indepVar, ignoredVar, color = self.color)[0]
+                else:
+                    self.parent_line = self.parent.ax.plot([self.minX, self.maxX], [self.current_value, self.current_value], color = self.color)[0]
+            else:
+                print('Direction must be "h" for horizontal, "v" for vertical, or "t" for tilted.')
+                return
+            if len(data) == 0:
+                legendLabel = str(self.current_value)
+            else:
+                minIgnoredVar = min(ignoredVar)
+                maxIgnoredVar = max(ignoredVar)
+                legendLabel = str(minIgnoredVar) + ' to ' + str(maxIgnoredVar)
+
+            self.plot, = self.drag_ax.plot(indepVar, dependVar, label = legendLabel, color = self.color)
+            if marker:
+                self.plot.set_marker('.')
+                self.plot.set_markerfacecolor('black')
+                self.plot.set_markeredgewidth('0')
+            self.legend = self.drag_ax.legend()
+
+            # self.parent_line = axline_function(self.current_value, color = self.color)
+            self.parent_line.set_pickradius(5)
+
+            def on_press(event):
+                if self.waiting:
+                    return
+                if event.inaxes != self.parent.ax:
+                    return
+                contains, _ = self.parent_line.contains(event)
+                if not contains:
+                    return
+                self.press = True
+                self.parent.fig.active_drag_bar = self
+                self.parent.__moving__ = True
+
+            def on_motion(event):
+                if self.waiting:
+                    return
+                if event.inaxes != self.parent.ax:
+                    return
+                if self.press is False:
+                    return
+                if (self.direction[0] == 'h') or (self.direction[0] == 't'):
+                    self.parent.__moving__ = True
+                    self.move_to(value = event.ydata)
+                elif self.direction[0] == 'v':
+                    self.parent.__moving__ = True
+                    self.move_to(value = event.xdata)
+
+            def on_release(event):
+                try:
+                    if self.waiting:
+                        return
+                    self.press = False
+                    while self.parent.__updating__:
+                        time.sleep(0.1)
+                    self.parent.fig.canvas.draw()
+                    self.parent.__moving__ = False
+                except:
+                    pass
+                finally:
+                    pass
+
+            def key_press(event):
+                if self.parent.fig.active_drag_bar is self:
+                    if event.key == 'up':
+                        self.parent.__moving__ = True
+                        self.move_to(value = self.current_value + self.step)
+                    if event.key == 'down':
+                        self.parent.__moving__ = True
+                        self.move_to(value = self.current_value - self.step)
+                    self.parent.__moving__ = False
+
+            self.parent.fig.canvas.mpl_connect('button_press_event', on_press)
+            self.parent.fig.canvas.mpl_connect('motion_notify_event', on_motion)
+            self.parent.fig.canvas.mpl_connect('button_release_event', on_release)
+            self.parent.fig.canvas.mpl_connect('key_press_event', key_press)
+
+        except:
+            err_detect = traceback.format_exc()
+            print(err_detect)
+            raise
+        finally:
+            self.__lock__.release()
+
+    def move_to(self, value = None):
+
+        if self.parent.__updating__:
+            return
+        if value is None:
+            return
         self.minX = np.min(self.parent.x)
         self.maxX = np.max(self.parent.x)
         self.minY = np.min(self.parent.y)
         self.maxY = np.max(self.parent.y)
+        
+        try:
+            
+            self.__lock__.acquire()
 
-        if axes is None:
-            self.drag_fig = plt.figure()
-            self.drag_ax = self.drag_fig.add_subplot(111)
-        else:
-            self.drag_ax = axes
-            self.drag_fig = axes.figure
-
-        indepVar = []
-        dependVar = []
-        ignoredVar = []
-        if self.direction[0] == 'h':
-            # axline_function = self.parent.ax.axhline
-            data = self.parent.filter_data('Y', self.current_value, self.error)
-            if len(data) != 0:
-                indepVar, ignoredVar, dependVar = zip(*data)
-                self.parent_line = self.parent.ax.plot(indepVar, ignoredVar, color = self.color)[0]
-            else:
-                self.parent_line = self.parent.ax.plot([self.minX, self.maxX], [self.current_value, self.current_value], color = self.color)[0]
-        elif self.direction[0] == 'v':
-            # axline_function = self.parent.ax.axvline
-            data = self.parent.filter_data('X', self.current_value, self.error)
-            if len(data) != 0:
-                ignoredVar, indepVar, dependVar = zip(*data)
-                self.parent_line = self.parent.ax.plot(ignoredVar, indepVar, color = self.color)[0]
-            else:
-                self.parent_line = self.parent.ax.plot([self.current_value, self.current_value], [self.minY, self.maxY], color = self.color)[0]
-        elif self.direction[0] == 't':
-            # axline_function = self.parent.ax.axhline
-            self.data_with_idxs = [(s.gate, s.Bz, s.didv_value, s.loop_idxs[0], s.loop_idxs[1]) for s in self.parent.spectra_list]
-            nearestY_tuple = min(self.data_with_idxs, key = lambda elem: abs(elem[1] - self.current_value))
-            nearestY = nearestY_tuple[3]
-            data = sorted([elem for elem in self.data_with_idxs if elem[3] == nearestY], key = lambda elem: elem[0])
-            if len(data) != 0:
-                indepVar, ignoredVar, dependVar, _, _ = zip(*data)
-                self.parent_line = self.parent.ax.plot(indepVar, ignoredVar, color = self.color)[0]
-            else:
-                self.parent_line = self.parent.ax.plot([self.minX, self.maxX], [self.current_value, self.current_value], color = self.color)[0]
-        else:
-            print('Direction must be "h" for horizontal, "v" for vertical, or "t" for tilted.')
-            return
-        if len(data) == 0:
-            legendLabel = str(self.current_value)
-        else:
-            minIgnoredVar = min(ignoredVar)
-            maxIgnoredVar = max(ignoredVar)
-            legendLabel = str(minIgnoredVar) + ' to ' + str(maxIgnoredVar)
-
-        self.plot, = self.drag_ax.plot(indepVar, dependVar, label = legendLabel, color = self.color)
-        if marker:
-            self.plot.set_marker('.')
-            self.plot.set_markerfacecolor('black')
-            self.plot.set_markeredgewidth('0')
-        self.legend = self.drag_ax.legend()
-
-        # self.parent_line = self.parent.ax.plot(indepVar, ignoredVar, color = self.color)
-        self.parent_line.set_pickradius(5)
-
-        def on_press(event):
-            if self.waiting:
-                return
-            if event.inaxes != self.parent.ax:
-                return
-            contains, _ = self.parent_line.contains(event)
-            if not contains:
-                return
-            self.press = True
-            self.parent.fig.active_drag_bar = self
-
-        def on_motion(event):
-            if self.waiting:
-                return
-            if event.inaxes != self.parent.ax:
-                return
-            if self.press is False:
-                return
-            if (self.direction[0] == 'h') or (self.direction[0] == 't'):
-                self.move_to(value = event.ydata)
+            self.current_value = value
+            indepVar = []
+            dependVar = []
+            ignoredVar = []
+            if self.direction[0] == 'h':
+                # set_data_function = self.parent_line.set_ydata
+                data = self.parent.filter_data('Y', self.current_value, self.error)
+                if len(data) != 0:
+                    indepVar, ignoredVar, dependVar, _, _ = zip(*data)
+                    self.parent_line.set_xdata(indepVar)
+                    self.parent_line.set_ydata(ignoredVar)
+                else:
+                    self.parent_line.set_xdata([self.minX, self.maxX])
+                    self.parent_line.set_ydata([self.current_value, self.current_value])
             elif self.direction[0] == 'v':
-                self.move_to(value = event.xdata)
-
-        def on_release(event):
-            if self.waiting:
-                return
-            self.press = False
+                # set_data_function = self.parent_line.set_xdata
+                data = self.parent.filter_data('X', self.current_value, self.error)
+                if len(data) != 0:
+                    ignoredVar, indepVar, dependVar, _, _ = zip(*data)
+                    self.parent_line.set_xdata(ignoredVar)
+                    self.parent_line.set_ydata(indepVar)
+                else:
+                    self.parent_line.set_xdata([self.current_value, self.current_value])
+                    self.parent_line.set_ydata([self.minY, self.maxY])
+            elif self.direction[0] == 't':
+                # set_data_function = self.parent_line.set_ydata
+                nearestY_tuple = min(self.parent.data, key = lambda elem: abs(elem[1] - self.current_value))
+                nearestY = nearestY_tuple[3]
+                self.current_value = nearestY_tuple[1]
+                data = sorted([elem for elem in self.parent.data if elem[3] == nearestY], key = lambda elem: elem[0])
+                if len(data) != 0:
+                    indepVar, ignoredVar, dependVar, _, _ = zip(*data)
+                    self.parent_line.set_xdata(indepVar)
+                    self.parent_line.set_ydata(ignoredVar)
+                else:
+                    self.parent_line.set_xdata([self.minX, self.maxX])
+                    self.parent_line.set_ydata([self.current_value, self.current_value])
+            if len(data) == 0:
+                legendLabel = str(self.current_value)
+            else:
+                minIndepVar = min(indepVar)
+                maxIndepVar = max(indepVar)
+                minIgnoredVar = min(ignoredVar)
+                maxIgnoredVar = max(ignoredVar)
+                minDependVar = min(dependVar)
+                maxDependVar = max(dependVar)
+                legendLabel = str(minIgnoredVar) + ' to ' + str(maxIgnoredVar)
+            
+            # set_data_function([self.current_value, self.current_value])
             self.parent.fig.canvas.draw()
 
-        def key_press(event):
-            if self.parent.fig.active_drag_bar is self:
-                if event.key == 'up':
-                    self.move_to(value = self.current_value + self.step)
-                if event.key == 'down':
-                    self.move_to(value = self.current_value - self.step)
-
-        self.parent.fig.canvas.mpl_connect('button_press_event', on_press)
-        self.parent.fig.canvas.mpl_connect('motion_notify_event', on_motion)
-        self.parent.fig.canvas.mpl_connect('button_release_event', on_release)
-        self.parent.fig.canvas.mpl_connect('key_press_event', key_press)
-
-    def move_to(self, value = None):
-        
-        if value is None:
-            return
-        self.current_value = value
-        indepVar = []
-        dependVar = []
-        ignoredVar = []
-        if self.direction[0] == 'h':
-            # set_data_function = self.parent_line.set_ydata
-            data = self.parent.filter_data('Y', self.current_value, self.error)
-            if len(data) != 0:
-                indepVar, ignoredVar, dependVar = zip(*data)
-                self.parent_line.set_xdata(indepVar)
-                self.parent_line.set_ydata(ignoredVar)
-            else:
-                self.parent_line.set_xdata([self.minX, self.maxX])
-                self.parent_line.set_ydata([self.current_value, self.current_value])
-        elif self.direction[0] == 'v':
-            # set_data_function = self.parent_line.set_xdata
-            data = self.parent.filter_data('X', self.current_value, self.error)
-            if len(data) != 0:
-                ignoredVar, indepVar, dependVar = zip(*data)
-                self.parent_line.set_xdata(ignoredVar)
-                self.parent_line.set_ydata(indepVar)
-            else:
-                self.parent_line.set_xdata([self.current_value, self.current_value])
-                self.parent_line.set_ydata([self.minY, self.maxY])
-        elif self.direction[0] == 't':
-            # set_data_function = self.parent_line.set_ydata
-            nearestY_tuple = min(self.data_with_idxs, key = lambda elem: abs(elem[1] - self.current_value))
-            nearestY = nearestY_tuple[3]
-            self.current_value = nearestY_tuple[1]
-            data = sorted([elem for elem in self.data_with_idxs if elem[3] == nearestY], key = lambda elem: elem[0])
-            if len(data) != 0:
-                indepVar, ignoredVar, dependVar, _, _ = zip(*data)
-                self.parent_line.set_xdata(indepVar)
-                self.parent_line.set_ydata(ignoredVar)
-            else:
-                self.parent_line.set_xdata([self.minX, self.maxX])
-                self.parent_line.set_ydata([self.current_value, self.current_value])
-        if len(data) == 0:
-            legendLabel = str(self.current_value)
-        else:
-            minIndepVar = min(indepVar)
-            maxIndepVar = max(indepVar)
-            minIgnoredVar = min(ignoredVar)
-            maxIgnoredVar = max(ignoredVar)
-            minDependVar = min(dependVar)
-            maxDependVar = max(dependVar)
-            legendLabel = str(minIgnoredVar) + ' to ' + str(maxIgnoredVar)
-        
-        # self.parent_line.set_xdata(indepVar)
-        # self.parent_line.set_ydata(ignoredVar)
-        self.parent.fig.canvas.draw()
+        except:
+            # err_detect = traceback.format_exc()
+            # print(err_detect)
+            # raise
+            pass
+        finally:
+            self.__lock__.release()
 
         self.plot.set_xdata(indepVar)
         self.plot.set_ydata(dependVar)
