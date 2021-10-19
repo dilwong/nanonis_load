@@ -9,6 +9,8 @@ This Python module reads the value of the magnetic field directly from the .dat 
 
 Assumes the gate voltages are the same for each loop iteration.
 
+Tested in Python 3 and Python 2.7.
+
 To run:
 landauPlot1 = magnetoconductance.landau_fan('BASENAME_') # Loads and plots the Landau Fan
 bar1 = landauPlot1.drag_bar(direction='t', color = 'orange') # A mouse-draggable interactive bar
@@ -147,18 +149,27 @@ class landau_fan():
                 spec.Bz = float(spec.header['Magnetic Field Z (T)'])
                 bias_list = spec.data['Bias calc (V)']
                 bias_index = min(range(len(bias_list)), key = lambda idx: abs(bias_list[idx] - self.bias))
+                spec.__selected_bias_index__ = bias_index
                 spec.didv_value = spec.data[self.channel][bias_index]
                 spec.gate = round(spec.gate, 5) # Avoid unlikely floating-point precision issues
                 spec.loop_idxs = [int(n) for n in spec.__filename__.split('.')[0].split('_')[-2:]]
                 self.spectra_list.append(spec)
+        if cache is not None: # If the cached bias is not the same as the desired bias
+            if cache != 'update':
+                if cache.bias != self.bias:
+                    for spec in self.spectra_list:
+                        bias_list = spec.data['Bias calc (V)']
+                        bias_index = min(range(len(bias_list)), key = lambda idx: abs(bias_list[idx] - self.bias))
+                        spec.didv_value = spec.data[self.channel][bias_index]
+                        spec.__selected_bias_index__ = bias_index
         self.nSpectra = len(self.spectra_list)
         self.data = sorted([(s.gate, s.Bz, s.didv_value, s.loop_idxs[0], s.loop_idxs[1]) for s in self.spectra_list])
 
         # Construct self.x, self.y, and self.z as rectangular arrays with the same dimensions
         x_values = sorted(list(set([elem[0] for elem in self.data])))
-        self.x = []
-        self.y = []
-        self.z = []
+        x_temp = []
+        y_temp = []
+        z_temp = []
         maxnBs = 0
         for gateVoltage in x_values:
             magFields = [elem[1] for elem in self.data if elem[0] == gateVoltage]
@@ -166,20 +177,20 @@ class landau_fan():
             nBs = len(magFields)
             if nBs > maxnBs:
                 maxnBs = nBs
-            self.x.append([gateVoltage] * nBs)
-            self.y.append(magFields)
-            self.z.append(condValues)
-        for idx, _ in enumerate(self.x):
-            nBs = len(self.x[idx])
+            x_temp.append([gateVoltage] * nBs)
+            y_temp.append(magFields)
+            z_temp.append(condValues)
+        for idx, _ in enumerate(x_temp):
+            nBs = len(x_temp[idx])
             if nBs != maxnBs:
-                deltaY = self.y[idx][-1] - self.y[idx][-2]
+                deltaY = y_temp[idx][-1] - y_temp[idx][-2]
                 for r in range(maxnBs - nBs):
-                    self.x[idx].append(self.x[idx][0])
-                    self.y[idx].append(self.y[idx][-1] + deltaY)
-                    self.z[idx].append(np.nan)
-        self.x = np.array(self.x)
-        self.y = np.array(self.y)
-        self.z = ma.masked_invalid(self.z)
+                    x_temp[idx].append(x_temp[idx][0])
+                    y_temp[idx].append(y_temp[idx][-1] + deltaY)
+                    z_temp[idx].append(np.nan)
+        self.x = np.array(x_temp)
+        self.y = np.array(y_temp)
+        self.z = ma.masked_invalid(z_temp)
 
     # Construct the array with quadrilateral vertices such that self.x and self.y are contained in the quadrilaterals
     def __mesh__(self):
@@ -201,7 +212,7 @@ class landau_fan():
         try:
             self.__lock__.acquire()
             self.ax.set_xlim(x_min, x_max)
-        except:
+        except Exception:
             err_detect = traceback.format_exc()
             print(err_detect)
             raise
@@ -212,7 +223,7 @@ class landau_fan():
         try:
             self.__lock__.acquire()
             self.ax.set_ylim(y_min, y_max)
-        except:
+        except Exception:
             err_detect = traceback.format_exc()
             print(err_detect)
             raise
@@ -223,12 +234,12 @@ class landau_fan():
         try:
             self.__lock__.acquire()
             self.pcolor.set_clim(c_min, c_max)
-        except:
+        except Exception:
             err_detect = traceback.format_exc()
             print(err_detect)
             raise
         finally:
-            self.__lock.release()
+            self.__lock__.release()
 
     def colormap(self, cmap, set = True):
         if type(cmap) == np.ndarray:
@@ -271,8 +282,9 @@ class landau_fan():
             self.pcolor.remove()
             self.pcolor = self.ax.pcolormesh(x_temp, y_temp, self.z, cmap = self.cmap, rasterized = self.rasterized)
             self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
+            self.clim(clim_min, clim_max)
             self.fig.canvas.draw()
-        except:
+        except Exception:
             err_detect = traceback.format_exc()
             print(err_detect)
             raise
@@ -293,7 +305,7 @@ class landau_fan():
         filtered = [elem for elem in self.data if abs(elem[f_idx] - value) <= error]
         return sorted(filtered, key = lambda elem: elem[vary_idx])
 
-    def drag_bar(self, direction = 'h', axes = None, color = '#1f77b4', initial_value = 0, step = None, error = 0):
+    def drag_bar(self, direction = 't', axes = None, color = '#1f77b4', initial_value = 0, step = None, error = 0):
         
         if (direction[0] == 'h') or (direction[0] == 't'):
             initial_value = self.ax.get_ylim()[1] - (self.ax.get_ylim()[1] - self.ax.get_ylim()[0]) * 0.1
@@ -304,7 +316,7 @@ class landau_fan():
 
 class drag_bar():
 
-    def __init__(self, parent, direction = 'h', axes = None, color = '#1f77b4', initial_value = 0, step = None, error = 0, marker = True):
+    def __init__(self, parent, direction = 't', axes = None, color = '#1f77b4', initial_value = 0, step = None, error = 0, marker = True):
         
         self.parent = parent
         self.parent.__draggables__.append(self)
@@ -348,17 +360,17 @@ class drag_bar():
             ignoredVar = []
             if self.direction[0] == 'h':
                 # axline_function = self.parent.ax.axhline
-                data = self.parent.filter_data('Y', self.current_value, self.error)
-                if len(data) != 0:
-                    indepVar, ignoredVar, dependVar, _, _ = zip(*data)
+                self.data = self.parent.filter_data('Y', self.current_value, self.error)
+                if len(self.data) != 0:
+                    indepVar, ignoredVar, dependVar, _, _ = zip(*self.data)
                     self.parent_line = self.parent.ax.plot(indepVar, ignoredVar, color = self.color)[0]
                 else:
                     self.parent_line = self.parent.ax.plot([self.minX, self.maxX], [self.current_value, self.current_value], color = self.color)[0]
             elif self.direction[0] == 'v':
                 # axline_function = self.parent.ax.axvline
-                data = self.parent.filter_data('X', self.current_value, self.error)
-                if len(data) != 0:
-                    ignoredVar, indepVar, dependVar, _, _ = zip(*data)
+                self.data = self.parent.filter_data('X', self.current_value, self.error)
+                if len(self.data) != 0:
+                    ignoredVar, indepVar, dependVar, _, _ = zip(*self.data)
                     self.parent_line = self.parent.ax.plot(ignoredVar, indepVar, color = self.color)[0]
                 else:
                     self.parent_line = self.parent.ax.plot([self.current_value, self.current_value], [self.minY, self.maxY], color = self.color)[0]
@@ -366,16 +378,16 @@ class drag_bar():
                 # axline_function = self.parent.ax.axhline
                 nearestY_tuple = min(self.parent.data, key = lambda elem: abs(elem[1] - self.current_value))
                 nearestY = nearestY_tuple[3]
-                data = sorted([elem for elem in self.parent.data if elem[3] == nearestY], key = lambda elem: elem[0])
-                if len(data) != 0:
-                    indepVar, ignoredVar, dependVar, _, _ = zip(*data)
+                self.data = sorted([elem for elem in self.parent.data if elem[3] == nearestY], key = lambda elem: elem[0])
+                if len(self.data) != 0:
+                    indepVar, ignoredVar, dependVar, _, _ = zip(*self.data)
                     self.parent_line = self.parent.ax.plot(indepVar, ignoredVar, color = self.color)[0]
                 else:
                     self.parent_line = self.parent.ax.plot([self.minX, self.maxX], [self.current_value, self.current_value], color = self.color)[0]
             else:
                 print('Direction must be "h" for horizontal, "v" for vertical, or "t" for tilted.')
                 return
-            if len(data) == 0:
+            if len(self.data) == 0:
                 legendLabel = str(self.current_value)
             else:
                 minIgnoredVar = min(ignoredVar)
@@ -427,8 +439,12 @@ class drag_bar():
                         time.sleep(0.1)
                     self.parent.fig.canvas.draw()
                     self.parent.__moving__ = False
-                except:
+                except AttributeError:
                     pass
+                except Exception:
+                    err_detect = traceback.format_exc()
+                    print(err_detect)
+                    raise
                 finally:
                     pass
 
@@ -447,7 +463,9 @@ class drag_bar():
             self.parent.fig.canvas.mpl_connect('button_release_event', on_release)
             self.parent.fig.canvas.mpl_connect('key_press_event', key_press)
 
-        except:
+        except AttributeError:
+            pass
+        except Exception:
             err_detect = traceback.format_exc()
             print(err_detect)
             raise
@@ -475,9 +493,9 @@ class drag_bar():
             ignoredVar = []
             if self.direction[0] == 'h':
                 # set_data_function = self.parent_line.set_ydata
-                data = self.parent.filter_data('Y', self.current_value, self.error)
-                if len(data) != 0:
-                    indepVar, ignoredVar, dependVar, _, _ = zip(*data)
+                self.data = self.parent.filter_data('Y', self.current_value, self.error)
+                if len(self.data) != 0:
+                    indepVar, ignoredVar, dependVar, _, _ = zip(*self.data)
                     self.parent_line.set_xdata(indepVar)
                     self.parent_line.set_ydata(ignoredVar)
                 else:
@@ -485,9 +503,9 @@ class drag_bar():
                     self.parent_line.set_ydata([self.current_value, self.current_value])
             elif self.direction[0] == 'v':
                 # set_data_function = self.parent_line.set_xdata
-                data = self.parent.filter_data('X', self.current_value, self.error)
-                if len(data) != 0:
-                    ignoredVar, indepVar, dependVar, _, _ = zip(*data)
+                self.data = self.parent.filter_data('X', self.current_value, self.error)
+                if len(self.data) != 0:
+                    ignoredVar, indepVar, dependVar, _, _ = zip(*self.data)
                     self.parent_line.set_xdata(ignoredVar)
                     self.parent_line.set_ydata(indepVar)
                 else:
@@ -498,15 +516,15 @@ class drag_bar():
                 nearestY_tuple = min(self.parent.data, key = lambda elem: abs(elem[1] - self.current_value))
                 nearestY = nearestY_tuple[3]
                 self.current_value = nearestY_tuple[1]
-                data = sorted([elem for elem in self.parent.data if elem[3] == nearestY], key = lambda elem: elem[0])
-                if len(data) != 0:
-                    indepVar, ignoredVar, dependVar, _, _ = zip(*data)
+                self.data = sorted([elem for elem in self.parent.data if elem[3] == nearestY], key = lambda elem: elem[0])
+                if len(self.data) != 0:
+                    indepVar, ignoredVar, dependVar, _, _ = zip(*self.data)
                     self.parent_line.set_xdata(indepVar)
                     self.parent_line.set_ydata(ignoredVar)
                 else:
                     self.parent_line.set_xdata([self.minX, self.maxX])
                     self.parent_line.set_ydata([self.current_value, self.current_value])
-            if len(data) == 0:
+            if len(self.data) == 0:
                 legendLabel = str(self.current_value)
             else:
                 minIndepVar = min(indepVar)
@@ -520,11 +538,12 @@ class drag_bar():
             # set_data_function([self.current_value, self.current_value])
             self.parent.fig.canvas.draw()
 
-        except:
-            # err_detect = traceback.format_exc()
-            # print(err_detect)
-            # raise
+        except AttributeError:
             pass
+        except Exception:
+            err_detect = traceback.format_exc()
+            print(err_detect)
+            raise
         finally:
             self.__lock__.release()
 
@@ -532,7 +551,7 @@ class drag_bar():
         self.plot.set_ydata(dependVar)
         self.plot.set_label(legendLabel)
         self.drag_ax.legend()
-        if (self.__autoscale__) and (len(data) != 0):
+        if (self.__autoscale__) and (len(self.data) != 0):
             self.xlim(minIndepVar, maxIndepVar)
             self.ylim(minDependVar, maxDependVar)
         self.drag_fig.canvas.draw()
