@@ -11,6 +11,31 @@ import pandas as pd
 
 class colorplot(object):
 
+    r"""
+    Colorplot object that is inherited by didv.colorplot.
+
+    Methods:
+        xlim(x_min : float, x_max : float) : None
+            Set the x-axis limits. x_min < x_max
+        ylim(y_min : float, y_max : float) : None
+            Set the y-axis limits. y_min < y_max
+        clim(c_min : float, c_max : float) : None
+            Set the color axis limits. c_min < c_max
+        colormap(cmap) : None
+            Change the colormap to cmap, where cmap is an acceptable matplotlib colormap.
+        axes_reset() : None
+            Reset the x-axis and y-axis limits to last known values.
+            This is useful if the user uses the zoom or pan tools on interactive matplotlib
+            plots. axes_reset() reverts the zooming and panning.
+        std_clim(n : float) : None
+            Set the color axis limits to [mean(data) - n * std(data), mean(data) + n * std(data)]
+        percentile_clim(lower : float, upper: float) : None
+            0 <= lower <= 1
+            0 <= upper <= 1
+            Set the color axis limits such that c_min is the lower-th percentile of the data
+            and c_max is the upper-th percentile of the data.
+    """
+
     def __init__(self):
         self.__draggables__ = []
         self.__drag_h_count__ = 0
@@ -215,6 +240,10 @@ class drag_bar():
 
     def __init__(self, colorplot, direction, axes, color, initial_value, xlist, ylist, locator_axes = None):
 
+        r'''
+        Interactive drag_bar object used to explore the data in didv.colorplot.
+        '''
+
         self.colorplot = colorplot
         self.direction = direction
         self.drag_ax = axes
@@ -398,14 +427,22 @@ class drag_bar():
         for bar in drag_bar_list:
             self.linked_bars.append(bar)
 
+    # Turn on autoscaling for the y-axis on the line plot.
     def autoscale_on(self):
         self.__autoscale__ = True
 
+    # Turn off autoscaling
     def autoscale_off(self):
         self.__autoscale__ = False
 
+    # Copy the data currently displayed by the drag_bar to the clipboard.
     def to_clipboard(self):
-        pd.DataFrame([self.indep_list, self.data[self.slice_dict['left'],self.slice_dict['right']]]).transpose().to_clipboard(index=False, header =False)
+        self.get_data().to_clipboard(index=False, header =False)
+
+    def get_data(self):
+        data = pd.DataFrame([self.indep_list, self.data[self.slice_dict['left'],self.slice_dict['right']]]).transpose()
+        data.columns = ['Bias calc (V)', 'Data']
+        return data
 
     def update_data(self):
         while self.press:

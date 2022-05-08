@@ -1,4 +1,6 @@
-#Imports Nanonis .sxm files into Python
+r'''
+Loads and plots Nanonis .sxm data.
+'''
 
 import numpy as np
 
@@ -10,6 +12,21 @@ import scipy.signal
 
 #Loads .sxm files into Nanonis
 class sxm():
+
+    r'''
+    Loads data from a Nanonis .sxm file.
+
+    Args:
+        filename : str
+    
+    Attributes:
+        header : Dict[str, object]
+            A dictionary containing all of the header information from the .sxm file.
+        data : Dict[List[numpy.ndarray]]
+            A dictionary indexed by the data channels.
+            The items in the dictionary are lists of length 2 (for forwards and backwards).
+            Each entry in each list is a numpy array that contains the numeric data.
+    '''
 
     def __init__(self, filename):
 
@@ -64,7 +81,47 @@ class sxm():
 #direction = 0 for forward, direction = 1 for backwards
 class plot():
 
-    #This class is named after plot_sxm.m
+    r'''
+    Plots the 2D .sxm data.
+
+    Args:
+        sxm_data : sxm.sxm
+            The sxm.sxm object that contains the data to be plotted.
+        channel : str
+            A string specifying which data channel is to be plotted.
+        direction : int (defauts to 0)
+            If direction is 0, plot the forward direction.
+            If direction is 1, plot the backwards direction.
+        flatten : bool (defaults to True)
+            If True, subtract a linear fit from every fast-scan line.
+        subtract_plane : bool (defaults to False)
+            If True, fit a 2D plane to the data, and subtract this plane from the data.
+
+    Attributes:
+        fig : matplotlib.figure.Figure
+        ax : matplotlib.axes._subplots.AxesSubplot
+
+    Methods:
+        xlim(x_min : float, x_max : float) : None
+            Set the x-axis limits for the real-space image. x_min < x_max
+        ylim(y_min : float, y_max : float) : None
+            Set the y-axis limits for the real-space image. y_min < y_max
+        clim(c_min : float, c_max : float) : None
+            Set the color axis limits for the real-space image. c_min < c_max
+        colormap(cmap) : None
+            Change the colormap to cmap for the real-space image, where cmap is an acceptable matplotlib colormap.
+        fft() : None
+            Plot the Fourier transform.
+        fft_clim(c_min : float, c_max : float) : None
+            Set the color axis limits on the Fourier transform. c_min < c_max
+        fft_colormap(cmap) : None
+            Change the colormap to cmap for the Fourier transform, where cmap is an acceptable matplotlib colormap.
+        add_spectra(spectra : List[didv.spectrum]) : None
+            Input a list of didv.spectrum objects, and a red 'X' will appear on the real-space image indicating
+            the position where each spectrum in the list was acquired. Clicking on a red X will plot the
+            'Input 2 (V)' or 'Input 2 [AVG] (V)' channel from the spectrum acquired at that location.
+    '''
+
     def __init__(self, sxm_data, channel, direction = 0, flatten = True, subtract_plane = False):
 
         self.data = sxm_data
@@ -117,7 +174,13 @@ class plot():
 
     def add_spectra(self, spectra, labels = None):
 
-        import didv
+        try:
+            from . import didv
+        except ImportError:
+            try:
+                import didv
+            except ImportError:
+                from nanonis_load import didv
 
         theta = np.radians(self.data.header['angle'])
         R = np.array(((np.cos(theta), -np.sin(theta)), (np.sin(theta), np.cos(theta))))

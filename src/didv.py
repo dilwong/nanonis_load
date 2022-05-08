@@ -1,29 +1,25 @@
-"""
-Imports Nanonis dI/dV spectroscopy files into Python
+r"""
+Loads Nanonis dI/dV spectroscopy files.
 
 Usage:
 
-spec = didv.spectrum(FILENAME) loads a single Bias Spectroscopy .dat file into a variable named spec
-spec.header contains ancillary information, spec.data is array of data
+spec = didv.spectrum(FILENAME) loads a single Bias Spectroscopy .dat file into a variable named spec.
+spec.header contains ancillary information, spec.data is array of data.
 
-specs = didv.batch_load(BASENAME) loads multiple Bias Spectroscopy .dat files into a list named specs
-didv.batch_load searches for all files with filename BASENAMEXXXXX.dat, where XXXXX is a five-digit number
+specs = didv.batch_load(BASENAME) loads multiple Bias Spectroscopy .dat files into a list named specs.
+didv.batch_load searches for all files with filename BASENAMEXXXXX.dat, where XXXXX is a five-digit number.
 
-didv.plot(spectra, channel = NameOfChannel) plots sample bias vs. the channel NameOfChannel
-spectra is either a single spectrum loaded via didv.spectrum or a list of spectra loaded via didv.batch_load
+didv.plot(spectra, channel = NameOfChannel) plots sample bias vs. the channel NameOfChannel.
+spectra is either a single spectrum loaded via didv.spectrum or a list of spectra loaded via didv.batch_load.
 
-didv.waterfall(spectra_list, vertical_shift = NUMBER, reverse = False) makes a waterfall plot
-spectra_list is a series of either lists of didv.spectrum objects or BASENAME strings
+didv.waterfall(spectra_list, vertical_shift = NUMBER, reverse = False) makes a waterfall plot.
+spectra_list is a series of either lists of didv.spectrum objects or BASENAME strings.
 
-p = didv.colorplot(spectra_list) plots dI/dV(Vs, Vg)
-This defaults to channel = 'Input 2 (V)' or 'Input 2 [AVG] (V)'. Use double_lockin = True to average with 'Input 3 (V)'
-p.drag_bar(direction = 'v' or 'h', locator = False)
+p = didv.colorplot(spectra_list) plots dI/dV(Vs, Vg).
+This defaults to channel = 'Input 2 (V)' or 'Input 2 [AVG] (V)'. Use double_lockin = True to average with 'Input 3 (V)'.
+p.drag_bar(direction = 'v' or 'h', locator = False).
 
 """
-
-# TO DO: Better docstrings
-# TO DO: Implement GUI using tkinter listbox and matplotlib.use("TkAgg")
-# TO DO: Test for floating point issues?
 
 import numpy as np
 import pandas as pd
@@ -33,6 +29,8 @@ import glob
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
+# BUG: interactive_colorplot.drag_bar appears to be broken in the MacOSX backend on matplotlib 3.5.1
+# To fix this issue, either use a different backend (such as Qt5Agg) or downgrade to matplotlib 3.4.3
 try:
     from . import interactive_colorplot
 except (ImportError, ValueError):
@@ -42,8 +40,24 @@ import traceback
 
 class spectrum():
 
-    """
-    didv.spectra(filename) loads one Nanonis spectrum file (extension .dat) into Python
+    r"""
+    didv.spectra(filename) loads one Nanonis spectrum file (extension .dat).
+    
+    Args:
+        filename : str
+            Name of the Nanonis spectrum file to be loaded.
+    
+    Attributes:
+        header : dict
+            Dictionary containing the header of the spectrum file.
+        data : pandas.DataFrame
+            Pandas DataFrame containing different measurement channels as columns.
+
+    Methods:
+        plot(channel = 'Input 2 (V)') : matplotlib.axes._subplots.AxesSubplot
+            Plot 'Bias calc (V)' vs channel.
+        to_clipboard(self, channel = None) : None
+            Copy the data to clipboard.
     """
 
     def __init__(self, filename, attribute = None):
@@ -76,12 +90,42 @@ class spectrum():
         self.data = pd.read_csv(filename, sep = '\t', header = header_lines, skip_blank_lines = False)
 
     def to_clipboard(self, channel = None):
+        
+        r'''
+        Copies the data to clipboard.
+
+        Args:
+            channel : Optional[str]
+                A string specifying which channel to copy to clipboard. If None, copy the entire DataFrame to clipboard.
+
+        Returns:
+            None
+        '''
+        
         if channel is None:
             self.data.to_clipboard()
         else:
             self.data[channel].to_clipboard(header = True)
 
     def plot(self, channel = 'Input 2 (V)', label = 'gate', multiply = 1, add = 0, plot_on_previous = False, **kwargs):
+        
+        '''
+        Plots 'Bias calc (V)' against the data in the column named channel.
+            
+        Args:
+            channel : str (defaults to 'Input 2 (V)')
+                A string specifying which channel to plot on the y-axis.
+            label : str (defaults to 'gate')
+                A string label for the data. If label = 'gate', then set the label to header['Gate (V)'] if it exists.
+            multiply : float (defaults to 1)
+                Scale the data by a multiplicative factor.
+            add : float (defaults to 0)
+                Shifts the data vertically by a constant.
+        
+        Returns:
+            matplotlib.axes._subplots.AxesSubplot
+        '''
+
         if label == 'gate':
             try:
                 legend_label = self.header['Gate (V)']
@@ -100,6 +144,36 @@ class spectrum():
 
 # Plot a spectrum
 class plot():
+
+    r"""
+    Plots a list of didv.spectra. Each spectrum is plotted a separate line.
+    
+    Args:
+        spectra : List[didv.spectra]
+            List of didv.spectra to be plotted.
+        channel: str (defaults to 'Input 2 (V)')
+            The x-axis is 'Bias calc (V)'. The y-axis is channel.
+        waterfall: float (default is 0)
+            Offset each curve vertically by waterfall.
+            To use waterfall, you must also specify increment.
+        increment: Optional[float]
+            The sign of increment determines whether waterfall shifts the spectra
+            in ascending order or descending order.
+        multiply : Optional[float]
+            If not None, scale the data by a multiplicative factor.
+        color : list of colors or a cmap-like object that matplotlib will accept
+            Determines the color of each spectrum line.
+
+    Attributes:
+        fig : the matplotlib figure object
+        ax : the matplotlib axes object
+
+    Methods:
+        xlim(x_min : float, x_max : float) : None
+            Set the x-axis limits. x_min < x_max
+        ylim(y_min : float, y_max : float) : None
+            Set the y-axis limits. y_min < y_max
+    """
 
     def __init__(self, spectra, channel = 'Input 2 (V)',  \
                                 names = None, \
@@ -213,7 +287,82 @@ class plot():
  # TO DO: Change self.gate, self.bias, self.index_list to @property getters/setters
 class colorplot(interactive_colorplot.colorplot):
 
-    "TO DO: WRITE DOCSTRING"
+    r"""
+    Plots a channel('Bias calc (V)', 'Gate (V)') colorplot.
+    didv.colorplot first takes an arbitrary number of non-keyword arguments.
+    These non-keyword arguments are either strings or lists of didv.spectrum.
+    If a string is 'BASENAME', search for all files in the current directory with a filename
+    that matches 'BASENAMEXXXXX.dat', where XXXXX is a five-digit number.
+    These files are loaded as didv.spectrum objects.
+    Then didv.colorplot takes a set of keyword arguments defined below.
+    
+    Optional Keyword Arguments:
+        channel : str
+            The channel to be plotted on the color axis.
+            If channel is not specified, channel will default to 'Input 2 (V)'.
+            Also search for 'Input 2 [AVG] (V) in the pandas DataFrame for all
+            didv.spectrum objects and rename that column to 'Input 2 (V)'.
+        transform : function
+            A function to element-wise transform the data.
+            Alternative, specify 'diff' or 'derivative' to plot the derivative
+            (via finite difference).
+        diff_axis :
+            If transform is 'diff' or 'derivative', diff_axis specifies the axis
+            (bias or gate) to take the derivative along.
+        dark : bool
+            If true, plot with dark background.
+        axes : matplotlib.axes._subplots.AxesSubplot
+            Plot the colorplot on axes. If None, create a new axes object.
+        over_iv: Tuple[float, float]
+            If given a tuple of two floats (e.g. (XX, XX)), plot dI/dV/(I/V),
+            where dI/dV is 'Input 2 (V)' and I/V is 'Current (A)' or 'Current [AVG] (A)'.
+            The two floats vertically offset dI/dV and horizontally shift the bias
+            in order to minimize the divide by zero issue.
+        multiply : float
+            If not None, scale the data by a multiplicative factor.
+        ping_remove : float
+            If not None, remove pings from data if there are 3 or more averages
+            per spectrum. Deletes data that differs from the mean value by more than
+            ping_remove standard deviations.
+        rasterized : bool
+            If True, then rasterize the colorplot. This is important when exporting the
+            plot to a vector graphics format (e.g. SVG).
+        colorbar : bool
+            If False, do not display the colorbar.
+        tilt_by_bias : bool
+            If True, plot gate voltage - sample bias on the y-axis instead of just the
+            gate voltage.
+
+    Attributes:
+        fig : matplotlib.figure.Figure
+            The matplotlib Figure object that contains the colorplot.
+        ax : matplotlib.axes._subplots.AxesSubplot
+            The matplotlib axes object that contains the colorplot.
+        data : numpy.ndarray
+            A numpy array with shape (# of biases, # of gates) that contains the numeric data.
+        bias : numpy.ndarray
+            A numpy array containing the bias values.
+        gate : numpy.ndarray
+            A numpy array containing the gate voltages. Also aliased as index_list.
+        spectra_list: List[didv.spectrum]
+            A list of all of the didv.spectrum objects.
+
+    Methods:
+        xlim(x_min : float, x_max : float) : None
+            Set the x-axis limits. x_min < x_max
+        ylim(y_min : float, y_max : float) : None
+            Set the y-axis limits. y_min < y_max
+        clim(c_min : float, c_max : float) : None
+            Set the color axis limits. c_min < c_max
+        refresh(wait_time : float) : None
+            Reload the data every wait_time seconds.
+        drag_bar(direction = 'horizontal', locator = False, axes = None, color = None) : interactive_colorplot.drag_bar
+            Creates a "drag_bar" that allows the user to interact with the data.
+            The drag_bar is a mouse-movable line on the colorplot that generates a plot of the line cut of the data.
+            The drag_bar can also be moved by the keyboard arrow keys.
+        colormap(cmap) : None
+            Change the colormap to cmap, where cmap is an acceptable matplotlib colormap.
+    """
 
     def __init__(self, *spectra_list, **kwargs):
 
@@ -773,7 +922,7 @@ def parse_arguments(*spectra_arguments, **kwargs):
             spectra.extend(s)
         elif type(arg) == list:
             spectra.extend(arg) # Does not check if list contains only didv.spectrum
-        elif type(arg) == didv.spectrum:
+        elif type(arg) == spectrum:
             spectra.append(arg)
         else:
             print('INCORRECT TYPE ERROR IN didv.parse_arguments')
@@ -786,6 +935,46 @@ def quick_colorplot(*args, **kwargs):
     return colorplot(*args, **kwargs)
 
 class transform_colorplot(interactive_colorplot.colorplot):
+    
+    r"""
+    Plots a transformed colorplot based on other didv.colorplot objects.
+    The first argument to didv.transform_colorplot is a function that takes n floats
+    and returns a single float.
+    Then the next n arguments to didv.transform_colorplot are didv.colorplot objects.
+    The data from the n didv.colorplot objects are element-wise fed into the function,
+    and the result is plotted as a colorplot.
+    didv.transform_colorplot will only plot data for gate voltages that exist in all of
+    the didv.colorplot objects. Gate voltages that do not exist in all didv.colorplot
+    objects will be skipped.
+
+    Attributes:
+        fig : matplotlib.figure.Figure
+            The matplotlib Figure object that contains the colorplot.
+        ax : matplotlib.axes._subplots.AxesSubplot
+            The matplotlib axes object that contains the colorplot.
+        data : numpy.ndarray
+            A numpy array with shape (# of biases, # of gates) that contains the numeric data.
+        bias : numpy.ndarray
+            A numpy array containing the bias values.
+        gate : numpy.ndarray
+            A numpy array containing the gate voltages. Also aliased as index_list.
+
+    Methods:
+        xlim(x_min : float, x_max : float) : None
+            Set the x-axis limits. x_min < x_max
+        ylim(y_min : float, y_max : float) : None
+            Set the y-axis limits. y_min < y_max
+        clim(c_min : float, c_max : float) : None
+            Set the color axis limits. c_min < c_max
+        refresh(wait_time : float) : None
+            Reload the data every wait_time seconds.
+        drag_bar(direction = 'horizontal', locator = False, axes = None, color = None) : interactive_colorplot.drag_bar
+            Creates a "drag_bar" that allows the user to interact with the data.
+            The drag_bar is a mouse-movable line on the colorplot that generates a plot of the line cut of the data.
+            The drag_bar can also be moved by the keyboard arrow keys.
+        colormap(cmap) : None
+            Change the colormap to cmap, where cmap is an acceptable matplotlib colormap.
+    """
 
     def __init__(self, *args, **kwargs):
 
@@ -914,6 +1103,39 @@ class transform_colorplot(interactive_colorplot.colorplot):
 
 class multi_colorplot():
 
+    r"""
+    Plots multiple didv.colorplots together on the same Figure.
+    drag_bar objects on didv.multi_colorplot are jointly movable.
+    
+    Args:
+        n : int
+            The number of colorplots to plot side-by-side.
+
+    Attributes:
+        fig : matplotlib.figure.Figure
+            The matplotlib Figure object that contains the colorplot.
+        ax : matplotlib.axes._subplots.AxesSubplot
+            The matplotlib axes object that contains the colorplot.
+        colorplots : List[didv.colorplot]
+            A list of the didv.colorplot objects.
+        drag_bars : List[interactive_colorplot.drag_bar]
+            A list of the interactive_colorplot.drag_bar objects.
+
+    Methods:
+        add_data(*args, **kwargs) : None
+            Adds data to the multi_colorplot by calling didv.colorplot(*args, **kwargs).
+        xlim(x_min : float, x_max : float) : None
+            Set the x-axis limits. x_min < x_max
+        ylim(y_min : float, y_max : float) : None
+            Set the y-axis limits. y_min < y_max
+        clim(c_min : float, c_max : float) : None
+            Set the color axis limits. c_min < c_max
+        colormap(cmap) : None
+            Change the colormap to cmap, where cmap is an acceptable matplotlib colormap.
+        set_fast() : None
+            Speed up interactions with the drag_bars by blitting.
+    """
+
     def __init__(self, n, direction = 'h'):
 
         self.fig = plt.figure()
@@ -986,7 +1208,20 @@ class multi_colorplot():
 
 def waterfall(*spectra_list, **kwargs):
 
-    "TO DO: WRITE DOCSTRING"
+    r'''
+    waterfall(*spectra_list, **kwargs) is a convenience method for creating a waterfall plot.
+    Just like didv.colorplot, waterfall takes an arbitrary number of non-keyword arguments.
+    These non-keyword arguments are either strings or lists of didv.spectrum.
+    If a string is 'BASENAME', search for all files in the current directory with a filename
+    that matches 'BASENAMEXXXXX.dat', where XXXXX is a five-digit number.
+    waterfall() also takes optional keyword arguments defined below.
+
+    Optional Keyword Arguments:
+        vertical_shift : float
+            Offset each curve vertically by vertical_shift.
+        reverse : bool
+            If True, plot the spectra in reverse order.
+    '''
 
     if 'vertical_shift' in kwargs:
         vertical_shift = kwargs['vertical_shift']
@@ -1037,6 +1272,23 @@ def std_ping_remove(spectrum, n): #Removes pings from Input 2 [...] (V), if aver
     spectrum.data['Input 2 (V)'] = data.mean(axis = 1)
 
 def query(spec_list, query_string):
+
+    r'''
+    Filters a list of spectra using a specified condition.
+
+    Args:
+        spec_list : List[didv.spectrum]
+            The input list of dI/dV spectra to filter through.
+        query_string : str
+            A string specifying the filtering condition.
+            Examples:
+                '-20 < gate < 0'
+                '(gate * 10) % 4 == 0 and gate >= 12'
+    
+    Returns:
+        A List[didv.spectrum] containing only the spectra that satisfy the condition
+        specified in query_string.
+    '''
 
     new_query_string = query_string.replace('gate','spec.header["Gate (V)"]')
 
@@ -1178,7 +1430,9 @@ def fixed_gate_plot(spectra_list, gate, lower_bound, upper_bound, axes = None, c
 #class landau_fan(interactive_colorplot.colorplot):
 class landau_fan():
 
-    "TO DO: WRITE DOCSTRING"
+    r'''
+    Plot a Landau Fan described in filename.
+    '''
 
     def __init__(self, filename, cache = None, fast = False):
 

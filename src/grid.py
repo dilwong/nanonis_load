@@ -1,4 +1,6 @@
-#Imports Grid Spectroscopy into Python
+r'''
+Loads and plots Nanonis Grid Spectroscopy (.3ds) data.
+'''
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,8 +13,23 @@ try:
 except ImportError:
     import interactive_colorplot
 
-#grid.nanonis_3ds(filename) loads Nanonis 3ds files into Python
 class nanonis_3ds():
+
+    r'''
+    grid.nanonis_3ds loads Nanonis .3ds files.
+
+    Args:
+        filename : str
+    
+    Attributes:
+        header : dict
+            A dictionary containing all of the header information from the .3ds file.
+        data : dict
+            A dictionary indexed by the data channels.
+            The items in the dictionary are numpy arrays containing the numeric data.
+        energy : numpy.ndarray
+            A numpy array containing the spectroscopy biases.
+    '''
 
     def __init__(self, filename):
 
@@ -88,12 +105,38 @@ class nanonis_3ds():
         for ty in channels:
             self.data[ty]=np.array([[predata[x][y][ty] for y in range(self.header['y_pixels'])] for x in range(self.header['x_pixels'])])
 
-
-#Plot Nanonis 3ds data
-#Key press UP and DOWN to change energy
-#
 #TO DO: Copy data to clipboard
 class plot():
+
+    r'''
+    Plots the 2D grid spectroscopy data.
+    Press the keyboard arrow keys (UP and DOWN) to change the bias/energy of the image.
+
+    Args:
+        nanonis_3ds : grid.nanonis_3ds
+            The grid.nanonis_3ds object that contains the data to be plotted.
+        channel : str
+            A string specifying which data channel is to be plotted.
+        fft : bool (defaults to False)
+            If True, plot the Fourier transform of the data.
+
+    Attributes:
+        fig : matplotlib.figure.Figure
+        ax : matplotlib.axes._subplots.AxesSubplot
+
+    Methods:
+        clim(c_min : float, c_max : float) : None
+            Set the color axis limits for the real-space image. c_min < c_max
+        colormap(cmap) : None
+            Change the colormap to cmap for the real-space image, where cmap is an acceptable matplotlib colormap.
+        fft_clim(c_min : float, c_max : float) : None
+            Set the color axis limits on the Fourier transform. c_min < c_max
+        fft_colormap(cmap) : None
+            Change the colormap to cmap for the Fourier transform, where cmap is an acceptable matplotlib colormap.
+        show_spectra() : None
+            If the user has clicked in the real-space image, show_spectra() will plot the spectra corresponding
+            to the clicked pixel in a new matplotlib Figure.
+    '''
 
     def __init__(self, nanonis_3ds, channel, fft = False):
 
@@ -190,6 +233,7 @@ class plot():
     def fft_colormap(self, cmap):
         self.fft_plot.set_cmap(cmap)
 
+    # TO DO: Implement channel keyword
     def show_spectra(self, channel = None, ax = None):
 
         if self.click is None:
@@ -242,6 +286,27 @@ class plot():
 
 #Loads and plots 3DS line cuts
 class linecut(interactive_colorplot.colorplot):
+
+    r'''
+    Loads and plots a 1D line cut from a .3ds file as a colorplot with the bias on the
+    x-axis and the distance on the y-axis.
+
+    Args:
+        filename : str
+            The name of the .3ds file to load.
+        channel : str
+            The name of the channel to plot on the color axis.
+
+    Attributes:
+        fig : matplotlib.figure.Figure
+        ax : matplotlib.axes._subplots.AxesSubplot
+
+    Methods:
+        drag_bar(direction = 'horizontal', locator = False, axes = None, color = None) : interactive_colorplot.drag_bar
+            Creates a "drag_bar" object.
+        show_image(filename, flatten = True, subtract_plane = False) : None
+            Plots an image from a .sxm file, and draws a line on the image indicating the location of the .3ds line cut.
+    '''
 
     def __init__(self, filename, channel):
 
