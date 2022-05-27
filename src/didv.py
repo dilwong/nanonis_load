@@ -23,6 +23,9 @@ p.drag_bar(direction = 'v' or 'h', locator = False).
 
 import numpy as np
 import pandas as pd
+import time
+import sys
+import os
 
 import glob
 
@@ -60,10 +63,12 @@ class spectrum():
             Copy the data to clipboard.
     """
 
-    def __init__(self, filename, attribute = None):
+    def __init__(self, filename = None, attribute = None):
 
         #Read the header, build the header
         self.header = {}
+        if filename is None:
+            return
         self.__filename__ = filename
         with open(filename,'r') as file_id:
             header_lines = 1
@@ -75,20 +80,23 @@ class spectrum():
                 file_line=file_line.split('\t')
                 if len(file_line) > 1:
                     self.header[file_line[0]]=file_line[1]
-            if 'X (m)' in self.header:
-                self.header['x (nm)'] = float(self.header['X (m)'])*1e9
-            if 'Y (m)' in self.header:
-                self.header['y (nm)'] = float(self.header['Y (m)'])*1e9
-            if 'Z (m)' in self.header:
-                self.header['z (nm)'] = float(self.header['Z (m)'])*1e9
-            if 'Gate Voltage (V)' in self.header:
-                self.header['Gate (V)'] = float(self.header['Gate Voltage (V)'])
-                self.gate = self.header['Gate (V)']
-            if attribute:
+            self._fix_header()
+            if attribute is not None:
                 self.header['attribute'] = attribute
 
         self.data = pd.read_csv(filename, sep = '\t', header = header_lines, skip_blank_lines = False)
 
+    def _fix_header(self):
+        if 'X (m)' in self.header:
+            self.header['x (nm)'] = float(self.header['X (m)'])*1e9
+        if 'Y (m)' in self.header:
+            self.header['y (nm)'] = float(self.header['Y (m)'])*1e9
+        if 'Z (m)' in self.header:
+            self.header['z (nm)'] = float(self.header['Z (m)'])*1e9
+        if 'Gate Voltage (V)' in self.header:
+            self.header['Gate (V)'] = float(self.header['Gate Voltage (V)'])
+            self.gate = self.header['Gate (V)']
+    
     def to_clipboard(self, channel = None):
         
         r'''
@@ -389,6 +397,8 @@ class colorplot(interactive_colorplot.colorplot):
         post_transform = kwargs['post_transform'] if ('post_transform' in kwargs) else None
         running_index = kwargs['running_index'] if ('running_index' in kwargs) else False
         tilt_by_bias = kwargs['tilt_by_bias'] if ('tilt_by_bias' in kwargs) else False
+        constraint = kwargs['constraint'] if ('constraint' in kwargs) else None
+        cache = kwargs['cache'] if ('cache' in kwargs) else None
 
         self.arg_list = spectra_list
         self.state_for_update = {}
@@ -397,7 +407,7 @@ class colorplot(interactive_colorplot.colorplot):
         self.__bshift__ = bias_shift
         self.__linecut_event_handlers__ = []
 
-        self.spectra_list = parse_arguments(*spectra_list) # TO DO: USE CACHE FEATURE OF parse_arguments
+        self.spectra_list = parse_arguments(*spectra_list, cache = cache, constraint = constraint)
         if not self.spectra_list:
             return
 
@@ -536,7 +546,9 @@ class colorplot(interactive_colorplot.colorplot):
     def update(self):
 
         try:
-            self.spectra_list = parse_arguments(*self.arg_list) # TO DO: USE CACHE FEATURE OF parse_arguments
+            constraint = self.initial_kwarg_state['constraint'] if ('constraint' in self.initial_kwarg_state) else None
+            cache = self.initial_kwarg_state['cache'] if ('cache' in self.initial_kwarg_state) else None
+            self.spectra_list = parse_arguments(*self.arg_list, cache = cache, constraint = constraint)
 
             # Only works for Input 2 (V) or similar types of data
             for spec in self.spectra_list:
@@ -874,13 +886,7 @@ class colorplot(interactive_colorplot.colorplot):
 
         event_handlers[0] = fig.canvas.mpl_connect('button_press_event', on_click)
 
-def batch_load(basename, file_range = None, attribute_list = None, cache = None):
-
-    if file_range is None:
-        file_range = range(9999)
-
-    file_string = basename + '*.dat'
-    file_exist = glob.glob(file_string)
+def batch_load(basename, file_range = None, attribute_list = None, cache = None, constraint = None):
 
     if cache is not None:
         spectrum_array = cache
@@ -888,26 +894,36 @@ def batch_load(basename, file_range = None, attribute_list = None, cache = None)
     else:
         file_list = []
         spectrum_array = []
-    for idx, file_number in enumerate(file_range):
-        filename = basename + '%0*d' % (5, file_number) + '.dat'
-        if filename in file_exist:
-            if cache is not None:
-                if filename in file_list: # Maybe use sets
+    if ('.h5' in basename) or ('.hdf5' in basename):
+        cachedNames = set(file_list) if cache else None
+        return HDF5Tospecs(basename, cachedNames = cachedNames, returnNames = True, constraint = constraint)
+    else:
+        if file_range is None:
+            file_range = range(9999)
+        file_string = basename + '*.dat'
+        file_exist = glob.glob(file_string)
+        if not file_exist:
+            return (spectrum_array, file_list)
+        for idx, file_number in enumerate(file_range):
+            filename = basename + '%0*d' % (5, file_number) + '.dat'
+            if filename in file_exist:
+                if cache is not None:
+                    if filename in file_list: # Maybe use a set
+                        continue
+                try:
+                    spectrum_inst = spectrum(filename)
+                    file_list.append(filename)
+                    if attribute_list:
+                        spectrum_inst.header['attribute'] = attribute_list[idx]
+                    spectrum_array.append(spectrum_inst)
+                except IOError:
                     continue
-            try:
-                spectrum_inst = spectrum(filename)
-                file_list.append(filename)
-                if attribute_list:
-                    spectrum_inst.header['attribute'] = attribute_list[idx]
-                spectrum_array.append(spectrum_inst)
-            except IOError:
-                continue
-
-    return (spectrum_array, file_list)
+        return (spectrum_array, file_list)
 
 def parse_arguments(*spectra_arguments, **kwargs):
 
     cache = kwargs['cache'] if ('cache' in kwargs) else None
+    constraint = kwargs['constraint'] if ('constraint' in kwargs) else None
 
     if cache is None:
         spectra = []
@@ -915,9 +931,11 @@ def parse_arguments(*spectra_arguments, **kwargs):
         spectra = cache
     for arg in spectra_arguments:
         if type(arg) == str:
-            s, f = batch_load(arg, cache = cache)
+            s, f = batch_load(arg, cache = cache, constraint = constraint)
             if f == []:
-                print('WARNING: NO FILES WITH BASENAME ' + arg)
+                s, f = batch_load(arg + '.h5', cache = cache, constraint = constraint)
+                if f == []:
+                    print('WARNING: NO FILES WITH BASENAME ' + arg)
             # monotonic keyword depreciated
             spectra.extend(s)
         elif type(arg) == list:
@@ -929,6 +947,92 @@ def parse_arguments(*spectra_arguments, **kwargs):
     if not spectra:
         print('ERROR: NO FILES!')
     return spectra
+
+def specsToHDF5(spectrumList, filename):
+    r'''
+    Saves a list of didv.spectrum objects as an HDF5 file.
+
+    Args:
+        filename : str
+            A string specifying the filename of the HDF5 file.
+    '''
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category = FutureWarning)
+        import h5py
+    if sys.version_info.major == 2:
+        FileInUseError = IOError
+    elif sys.version_info.major == 3:
+        FileInUseError = BlockingIOError
+    while True:
+        try:
+            with h5py.File(filename, 'a') as f:
+                if 'data' not in f.keys():
+                    f.create_group('data') # Unfortunately, track_order not available in older versions of h5py
+                for spec in spectrumList:
+                    f['data'].create_dataset(spec.__filename__, data = spec.data.values)
+                    for key, item in spec.header.items():
+                        f['data'][spec.__filename__].attrs[key] = item
+                    f['data'][spec.__filename__].attrs['channels'] = '||'.join(spec.data.columns)
+                size = len(f['data'])
+                f.attrs['size'] = size
+                while str(size) in f['data'].keys():
+                    size += 1
+                f.attrs['index'] = size
+        except FileInUseError:
+            time.sleep(0.1)
+            continue
+        break
+
+def HDF5Tospecs(filename, cachedNames = None, returnNames = False, constraint = None):
+    r'''
+    Reads an HDF5 file containing Bias Spectroscopy data, and returns a list of didv.spectrum objects.
+
+    Args:
+        filename : str
+            A string specifying the filename of the HDF5 file.
+        constraint : function(h5py.AttributeManager) -> bool
+            A function that filters which datasets are returned from the HDF5 file.
+            The function takes as input an 'attrs' of a HDF5 dataset.
+            The function returns True if the dataset should be included in the returned List[didv.spectrum], 
+            and false otherwise.
+    '''
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category = FutureWarning)
+        import h5py
+    if sys.version_info.major == 2:
+        FileInUseError = IOError
+    elif sys.version_info.major == 3:
+        FileInUseError = BlockingIOError
+    specList = []
+    fileList = []
+    while True:
+        try:
+            if not os.path.isfile(filename):
+                break
+            with h5py.File(filename, 'r') as f:
+                for name, dataset in f['data'].items():
+                    if (cachedNames is not None) and (name in cachedNames):
+                        continue
+                    if (constraint is not None) and (not constraint(dataset.attrs)):
+                        continue
+                    spec = spectrum()
+                    for key, item in dataset.attrs.items():
+                        spec.header[key] = item
+                    spec.data = pd.DataFrame(dataset[()], columns = dataset.attrs['channels'].split('||'))
+                    spec.__filename__ = name
+                    spec._fix_header()
+                    specList.append(spec)
+                    fileList.append(name)
+        except FileInUseError: # If the file is in use by another process, wait.
+            time.sleep(0.1)
+            continue
+        break
+    if returnNames:
+        return (specList, fileList)
+    else:
+        return specList
 
 def quick_colorplot(*args, **kwargs):
 
@@ -1254,12 +1358,12 @@ def waterfall(*spectra_list, **kwargs):
     w_plot.spectra_list = spectra
     return w_plot
 
-def std_ping_remove(spectrum, n): #Removes pings from Input 2 [...] (V), if average over 3 sweeps or more
+def std_ping_remove(spec, n): #Removes pings from Input 2 [...] (V), if average over 3 sweeps or more
     data = pd.DataFrame()
     cnt = 0
-    for channel_name in spectrum.data.columns:
+    for channel_name in spec.data.columns:
         if 'Input 2 [0' in channel_name:
-            data[channel_name] = spectrum.data[channel_name]
+            data[channel_name] = spec.data[channel_name]
             cnt += 1
     if (cnt == 0) or (cnt == 1):
         return
@@ -1269,7 +1373,7 @@ def std_ping_remove(spectrum, n): #Removes pings from Input 2 [...] (V), if aver
     std = data.std(axis=1) # Maybe use interquartile range instead of standard deviation
     median = data.median(axis = 1)
     data[np.abs(data.sub(median,axis = 0)).gt(n*std,axis=0)] = np.nan
-    spectrum.data['Input 2 (V)'] = data.mean(axis = 1)
+    spec.data['Input 2 (V)'] = data.mean(axis = 1)
 
 def query(spec_list, query_string):
 
