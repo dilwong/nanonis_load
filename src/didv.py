@@ -26,6 +26,7 @@ import pandas as pd
 import time
 import sys
 import os
+import ast
 
 import glob
 
@@ -951,6 +952,7 @@ def parse_arguments(*spectra_arguments, **kwargs):
 def specsToHDF5(spectrumList, filename):
     r'''
     Saves a list of didv.spectrum objects as an HDF5 file.
+    Does not overwrite an HDF5 if it already exists. Instead, append data to existing file.
 
     Args:
         filename : str
@@ -1033,6 +1035,30 @@ def HDF5Tospecs(filename, cachedNames = None, returnNames = False, constraint = 
         return (specList, fileList)
     else:
         return specList
+
+def datFilesToHDF5():
+    r'''
+    Convert .dat files in current working directory to .h5 HDF5 files.
+
+    .dat files are grouped according to their basenames, i.e. data from .dat files
+    named 'YYYYYYXXXXX.dat' (where XXXXX is any 5 digit number) are put into an HDF5
+    file named 'YYYYYY.h5'.
+
+    This function skips any files with basename 'Bias-Spectroscopy'.
+    '''
+    import re
+    allFiles = glob.glob('*.dat')
+    regex = re.compile(r'^(.*)\d{5}.dat')
+    allBasenames = set()
+    for file in allFiles:
+        match = regex.match(file)
+        if match is not None:
+            basename = match.group(1)
+            if basename != 'Bias-Spectroscopy': # Will still accept 'Bias-Spectroscopy_'
+                allBasenames.add(basename)
+    for basename in allBasenames:
+        specs, _ = batch_load(basename)
+        specsToHDF5(specs, basename + '.h5')
 
 def quick_colorplot(*args, **kwargs):
 
@@ -1375,6 +1401,54 @@ def std_ping_remove(spec, n): #Removes pings from Input 2 [...] (V), if average 
     data[np.abs(data.sub(median,axis = 0)).gt(n*std,axis=0)] = np.nan
     spec.data['Input 2 (V)'] = data.mean(axis = 1)
 
+class QueryException(Exception):
+
+    def __init__(self, message):
+        super(QueryException, self).__init__(message)
+
+class _QueryTransformer(ast.NodeTransformer):
+
+    def __init__(self):
+        super(_QueryTransformer, self).__init__()
+
+        self.whitelist = {
+            ast.Expression, ast.Expr, ast.Load, ast.Name, ast.Call,
+            ast.UnaryOp, ast.UAdd, ast.USub, ast.Not, ast.Invert,
+            ast.BinOp, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow, ast.LShift, ast.RShift, ast.BitOr, ast.BitXor, ast.BitAnd,
+            ast.BoolOp, ast.And, ast.Or,
+            ast.Compare, ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Is, ast.IsNot, ast.In, ast.NotIn,
+            ast.IfExp,
+            ast.Tuple, ast.List, ast.Dict,
+            ast.Subscript, ast.Slice
+        }
+        try:
+            self.whitelist.add(ast.Constant)
+        except AttributeError:
+            pass
+        try:
+            self.whitelist.add(ast.Num)
+        except AttributeError:
+            pass
+        try:
+            self.whitelist.add(ast.Str)
+        except AttributeError:
+            pass
+
+    def visit_Name(self, node):
+        return ast.Attribute(
+            value = ast.Name(id = 'spec', ctx = ast.Load()),
+            attr = node.id,
+            ctx = node.ctx
+        )
+
+    def visit_Call(self, node):
+        raise QueryException('Calling functions is not allowed in queries.')
+
+    def generic_visit(self, node):
+        if type(node) not in self.whitelist:
+            raise QueryException('Illegal operation!')
+        return super(_QueryTransformer, self).generic_visit(node)
+
 def query(spec_list, query_string):
 
     r'''
@@ -1394,14 +1468,16 @@ def query(spec_list, query_string):
         specified in query_string.
     '''
 
-    new_query_string = query_string.replace('gate','spec.header["Gate (V)"]')
+    tree = ast.parse(query_string, mode = 'eval')
+    tree = ast.fix_missing_locations(_QueryTransformer().visit(tree))
+    code = compile(tree, '', mode = 'eval')
 
     fetched_spectra = []
     try:
         for spec in spec_list:
-            if eval(new_query_string, {'__builtins__': None}, {'spec': spec} ):
+            if eval(code):
                 fetched_spectra.append(spec)
-    except TypeError: # What about SyntaxError?
+    except:
         print('INVALID QUERY STRING')
     return fetched_spectra
 
