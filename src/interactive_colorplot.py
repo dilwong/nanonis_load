@@ -9,6 +9,14 @@ import matplotlib.colors
 import numpy as np
 import pandas as pd
 
+import traceback
+
+class ColorplotException(Exception):
+
+    def __init__(self, message):
+        super(ColorplotException, self).__init__(message)
+
+# TO DO: Turn this into an abstract base class
 class colorplot(object):
 
     r"""
@@ -37,36 +45,129 @@ class colorplot(object):
     """
 
     def __init__(self):
-        self.__draggables__ = []
-        self.__drag_h_count__ = 0
-        self.__drag_v_count__ = 0
-        self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-        self.__drag_color_index__ = 0
-        self.__colorbar_rectangles__ = []
-        self.__x_axes_limits__ = None
-        self.__y_axes_limits__ = None
+        self.fig = None
+        self.ax = None
+        self.pcolor = None
+        self._terminate_update_loop = None
+        self._draggables = []
+        self._drag_h_count = 0
+        self._drag_v_count = 0
+        self._color_cycle = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        self._drag_color_index = 0
+        self._colorbar_rectangles = []
+        self._x_axes_limits = None
+        self._y_axes_limits = None
+        self.data = None
+        self.xlist = None
+        self.ylist = None
+        self._xshift = None
 
     def xlim(self, x_min, x_max):
+        if self.ax is None:
+            return
         self.ax.set_xlim(x_min, x_max)
-        self.__x_axes_limits__ = [x_min, x_max]
+        self._x_axes_limits = [x_min, x_max]
 
     def ylim(self, y_min, y_max):
+        if self.ax is None:
+            return
         self.ax.set_ylim(y_min, y_max)
-        self.__y_axes_limits__ = [y_min, y_max]
+        self._y_axes_limits = [y_min, y_max]
 
     def clim(self, c_min, c_max):
+        if self.pcolor is None:
+            return
         self.pcolor.set_clim(c_min, c_max)
-        if len(self.__colorbar_rectangles__) != 0:
+        if len(self._colorbar_rectangles) != 0:
             self.update_colormap()
+
+    def mesh(self, tilt = False, xshift = False, derivative = False):
+        if (self.xlist is None) or (self.ylist is None):
+            raise ColorplotException('No xlist or ylist')
+        new_x = (self.xlist[1:] + self.xlist[:-1]) * 0.5
+        new_x = np.insert(new_x, 0, self.xlist[0] - (self.xlist[1] - self.xlist[0]) * 0.5)
+        new_y = (self.ylist[1:] + self.ylist[:-1]) * 0.5
+        new_y = np.insert(new_y, 0, self.ylist[0] - (self.ylist[1] - self.ylist[0]) * 0.5)
+        if not derivative:
+            new_x = np.append(new_x, self.xlist[-1] + (self.xlist[-1] - self.xlist[-2]) * 0.5)
+            new_y = np.append(new_y, self.ylist[-1] + (self.ylist[-1] - self.ylist[-2]) * 0.5)
+        x, y = np.meshgrid(new_x, new_y) # Will handle non-linear x array
+        x = x.T
+        y = y.T
+        if xshift:
+            try:
+                x_shift_len = len(self._xshift)
+                if x_shift_len == len(self.ylist):
+                    new_x_shift = (np.array(self._xshift[1:]) + np.array(self._xshift[:-1])) * 0.5
+                    new_x_shift = np.insert(new_x_shift, 0, self._xshift[0] - (self._xshift[1] - self._xshift[0]) * 0.5)
+                    new_x_shift = np.append(new_x_shift, self._xshift[-1] + (self._xshift[-1] - self._xshift[-2]) * 0.5)
+                    for idx, shift_val in enumerate(new_x_shift): # Doesn't play nice with vertical dragbar
+                        x[:,idx] = x[:,idx] + shift_val
+            except TypeError:
+                pass
+        if tilt:
+            y = y - new_x.reshape((new_x.size, 1))
+        return (x, y)
+    
+    def load_data(self, cache = None):
+        raise NotImplementedError('colorplot.load_data not implemented')
+
+    def update(self, colorbar = True, tilt = False, xshift = False, derivative = False):
+
+        try:
+            self.load_data()
+            pseudocoordX, pseudocoordY = self.mesh(tilt = tilt, xshift = xshift, derivative = derivative)
+            cmap = self.pcolor.cmap
+            clim_min, clim_max = self.pcolor.get_clim()
+            if colorbar:
+                self.colorbar.remove()
+            self.pcolor.remove()
+            self.pcolor = self.ax.pcolormesh(pseudocoordX, pseudocoordY, self.data, cmap = cmap)
+            self.clim(clim_min, clim_max)
+            if colorbar:
+                self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
+            for dragbar in self._draggables:
+                dragbar.update_data()
+            self.fig.canvas.draw()
+        except:
+            err_detect = traceback.format_exc()
+            print(err_detect)
+            raise
+
+    def _update_loop(self, wait_time):
+
+        import time
+        if self._terminate_update_loop is None:
+            self._terminate_update_loop = False
+            while not self._terminate_update_loop:
+                time.sleep(wait_time)
+                self.update()
+        else:
+            print('colorplot._update_loop already running or already terminated')
+
+    def refresh(self, wait_time = 5):
+
+        try:
+            import thread
+        except ModuleNotFoundError:
+            import _thread as thread
+
+        def handle_close(event):
+            self._terminate_update_loop = True
+        self.fig.canvas.mpl_connect('close_event', handle_close)
+
+        thread.start_new_thread(self._update_loop, (wait_time, ))
 
     def axes_reset(self):
         try:
-            self.xlim(*self.__x_axes_limits__)
-            self.ylim(*self.__y_axes_limits__)
+            self.xlim(*self._x_axes_limits)
+            self.ylim(*self._y_axes_limits)
         except TypeError:
             pass
 
     def colormap(self, cmap, change_original = True):
+        if self.pcolor is None:
+            return
         if type(cmap) == np.ndarray:
             converted_cmap = matplotlib.colors.ListedColormap(cmap)
             self.pcolor.set_cmap(converted_cmap)
@@ -75,45 +176,47 @@ class colorplot(object):
         if change_original:
             self.original_cmap = self.pcolor.cmap
             self.stop_define_colormap()
-            self.__colorbar_rectangles__ = []
+            self._colorbar_rectangles = []
 
-    # TO DO: Refactor so that self.bias, self.index_list are more generic
-    #        i.e. no references to bias or gate
-    #        Use @property to set bias and gate
     def contour(self):
-        c_x, c_y = np.meshgrid(self.bias, self.index_list)
+        if self.ax is None:
+            return
+        c_x, c_y = np.meshgrid(self.xlist, self.ylist)
         c_x = c_x.T
         c_y = c_y.T
         self.ax.contour(c_x, c_y, self.data, cmap = 'jet')
 
     def std_clim(self, n):
-        #mean = np.mean(self.data)
-        #std = np.std(self.data)
+        if self.data is None:
+            return
         mean = np.nanmean(self.data)
         std = np.nanstd(self.data)
         self.clim(mean - n*std, mean + n*std)
 
     def percentile_clim(self, lower, upper):
-        #self.clim(np.percentile(self.data, lower), np.percentile(self.data, upper))
+        if self.data is None:
+            return
         self.clim(np.nanpercentile(self.data, lower * 100), np.nanpercentile(self.data, upper * 100))
 
     def whole_range(self):
-        min_bias = np.min(self.bias)
-        max_bias = np.max(self.bias)
-        min_index_list = np.min(self.index_list)
-        max_index_list = np.max(self.index_list)
-        self.xlim(min_bias, max_bias)
-        self.ylim(min_index_list, max_index_list)
+        if (self.xlist is None) or (self.ylist is None):
+            return
+        min_x = np.min(self.xlist)
+        max_x = np.max(self.xlist)
+        min_y = np.min(self.ylist)
+        max_y = np.max(self.ylist)
+        self.xlim(min_x, max_x)
+        self.ylim(min_y, max_y)
 
     def save_data_to_file(self, filename):
 
-        x, y = np.meshgrid(self.bias, self.index_list)
+        x, y = np.meshgrid(self.xlist, self.ylist)
         x = x.T
         y = y.T
         try:
-            bias_shift_len = len(self.__bshift__)
-            if bias_shift_len == len(self.index_list):
-                for idx, shift_val in enumerate(self.__bshift__):
+            x_shift_len = len(self._xshift)
+            if x_shift_len == len(self.ylist):
+                for idx, shift_val in enumerate(self._xshift):
                     x[:,idx] = x[:,idx] + shift_val
         except TypeError:
             pass
@@ -128,35 +231,35 @@ class colorplot(object):
 
         if direction[0] == 'h':
             if axes is None:
-                if self.__drag_h_count__ == 0:
-                    self.__drag_h_fig__ = plt.figure()
-                    self.__drag_h_ax__ = self.__drag_h_fig__.add_subplot(111)
-                axes = self.__drag_h_ax__
+                if self._drag_h_count == 0:
+                    self._drag_h_fig = plt.figure()
+                    self._drag_h_ax = self._drag_h_fig.add_subplot(111)
+                axes = self._drag_h_ax
             initial_value = self.ax.get_ylim()[1] - (self.ax.get_ylim()[1] - self.ax.get_ylim()[0]) * 0.1
-            self.__drag_h_count__ += 1
+            self._drag_h_count += 1
             if locator:
-                locator_axes = self.__drag_v_ax__
+                locator_axes = self._drag_v_ax
             else:
                 locator_axes = None
         elif direction[0] == 'v':
             if axes is None:
-                if self.__drag_v_count__ == 0:
-                    self.__drag_v_fig__ = plt.figure()
-                    self.__drag_v_ax__ = self.__drag_v_fig__.add_subplot(111)
-                axes = self.__drag_v_ax__
+                if self._drag_v_count == 0:
+                    self._drag_v_fig = plt.figure()
+                    self._drag_v_ax = self._drag_v_fig.add_subplot(111)
+                axes = self._drag_v_ax
             initial_value = self.ax.get_xlim()[0] + (self.ax.get_xlim()[1] - self.ax.get_xlim()[0]) * 0.1
-            self.__drag_v_count__ += 1
+            self._drag_v_count += 1
             if locator:
-                locator_axes = self.__drag_h_ax__
+                locator_axes = self._drag_h_ax
             else:
                 locator_axes = None
         else:
             print('Direction must be "h" for horizontal or "v" for vertical.')
             return
         if color is None:
-            color = self.__color_cycle__[self.__drag_color_index__]
-            self.__drag_color_index__ += 1
-            self.__drag_color_index__ = self.__drag_color_index__ % len(self.__color_cycle__)
+            color = self._color_cycle[self._drag_color_index]
+            self._drag_color_index += 1
+            self._drag_color_index = self._drag_color_index % len(self._color_cycle)
 
         return drag_bar(self, direction, axes, color, initial_value, self.xlist, self.ylist, locator_axes = locator_axes)
 
@@ -168,7 +271,7 @@ class colorplot(object):
 
         def on_click_bar(event):
             if event.inaxes == self.color_select_ax:
-                for rect in self.__colorbar_rectangles__:
+                for rect in self._colorbar_rectangles:
                     if rect.active:
                         rect.orig_norm_value = self.color_select_bar.norm(event.ydata)
                         rect.color = self.original_cmap(rect.orig_norm_value)
@@ -179,19 +282,19 @@ class colorplot(object):
         def key_press(event):
             if event.key == 'backspace':
                 remove_mark = None
-                for n, rect in enumerate(self.__colorbar_rectangles__):
+                for n, rect in enumerate(self._colorbar_rectangles):
                     if rect.active:
                         rect.rect.remove()
                         remove_mark = n
                         break
                 if remove_mark is not None:
-                    del self.__colorbar_rectangles__[n]
+                    del self._colorbar_rectangles[n]
                 self.update_colormap()
                 self.fig.canvas.draw()
 
-        for rect in self.__colorbar_rectangles__:
+        for rect in self._colorbar_rectangles:
             self.ax.add_patch(rect.rect)
-        self.__define_colormap_event__ = self.fig.canvas.mpl_connect('button_press_event', on_click_ax)
+        self._define_colormap_event = self.fig.canvas.mpl_connect('button_press_event', on_click_ax)
 
         self.color_select_fig = plt.figure(figsize=(0.5,5))
         self.color_select_ax = self.color_select_fig.add_subplot(111)
@@ -199,21 +302,21 @@ class colorplot(object):
         self.color_select_ax.set_xticks([],[])
         self.color_select_ax.set_yticks([],[])
         self.color_select_fig.canvas.mpl_connect('button_press_event', on_click_bar)
-        self.__colormap_keypress_event__ = self.fig.canvas.mpl_connect('key_press_event', key_press)
+        self._colormap_keypress_event = self.fig.canvas.mpl_connect('key_press_event', key_press)
 
     def stop_define_colormap(self):
         try:
-            self.fig.canvas.mpl_disconnect(self.__define_colormap_event__)
-            self.fig.canvas.mpl_disconnect(self.__colormap_keypress_event__)
+            self.fig.canvas.mpl_disconnect(self._define_colormap_event)
+            self.fig.canvas.mpl_disconnect(self._colormap_keypress_event)
             plt.close(self.color_select_fig)
-            for rect in self.__colorbar_rectangles__:
+            for rect in self._colorbar_rectangles:
                 rect.rect.remove()
         except AttributeError:
             pass
 
     def update_colormap(self):
 
-        cmap_points = [[rect.c_value, rect.orig_norm_value] for rect in self.__colorbar_rectangles__]
+        cmap_points = [[rect.c_value, rect.orig_norm_value] for rect in self._colorbar_rectangles]
         c_min, c_max = self.pcolor.get_clim()
         cmap_points.append([c_min, 0])
         cmap_points.append([c_max, 1])
@@ -224,14 +327,14 @@ class colorplot(object):
 
     def add_colorbar_rectangle(self, x_value, y_value):
         rect = colorbar_rectangle(x_value, y_value, self)
-        self.__colorbar_rectangles__.append(rect)
+        self._colorbar_rectangles.append(rect)
         self.ax.add_patch(rect.rect)
         self.fig.canvas.draw()
 
     def export_colormap(self):
         c_min, c_max = self.pcolor.get_clim()
         print('C_MIN: ' + str(c_min))
-        for n, rect in enumerate(self.__colorbar_rectangles__):
+        for n, rect in enumerate(self._colorbar_rectangles):
             print('RECT ' + str(n) + ': ' + str(rect.x_tuple[1]) + ', ' + str(rect.y_tuple[1]))
         print('C_MAX: ' + str(c_max))
         return self.pcolor.cmap(np.linspace(0,1,256))
@@ -258,9 +361,9 @@ class drag_bar():
         self.fast = False
         self.waiting = False
         self.updated = False
-        self.__autoscale__ = False
+        self._autoscale = False
 
-        self.colorplot.__draggables__.append(self)
+        self.colorplot._draggables.append(self)
 
         if direction[0] == 'h':
             self.tune_list = self.ylist
@@ -383,7 +486,7 @@ class drag_bar():
             self.updated = False
             self.plot.set_xdata(self.indep_list)
         self.plot.set_ydata(self.data[self.slice_dict['left'],self.slice_dict['right']])
-        if self.__autoscale__:
+        if self._autoscale:
             ymin = np.min(self.data[self.slice_dict['left'],self.slice_dict['right']])
             ymax = np.max(self.data[self.slice_dict['left'],self.slice_dict['right']])
             self.drag_ax.set_ylim(ymin, ymax)
@@ -417,7 +520,7 @@ class drag_bar():
                 func()
 
     def refresh_legend(self):
-        for bar in self.colorplot.__draggables__:
+        for bar in self.colorplot._draggables:
             if bar.drag_ax is self.drag_ax:
                 bar.drag_ax.get_legend().get_lines()[bar.legend_order].set_visible(True)
                 bar.drag_ax.get_legend().get_lines()[bar.legend_order].set_pickradius(5)
@@ -429,19 +532,19 @@ class drag_bar():
 
     # Turn on autoscaling for the y-axis on the line plot.
     def autoscale_on(self):
-        self.__autoscale__ = True
+        self._autoscale = True
 
     # Turn off autoscaling
     def autoscale_off(self):
-        self.__autoscale__ = False
+        self._autoscale = False
 
     # Copy the data currently displayed by the drag_bar to the clipboard.
     def to_clipboard(self):
         self.get_data().to_clipboard(index=False, header =False)
 
-    def get_data(self):
+    def get_data(self, xName = 'Bias calc (V)'):
         data = pd.DataFrame([self.indep_list, self.data[self.slice_dict['left'],self.slice_dict['right']]]).transpose()
-        data.columns = ['Bias calc (V)', 'Data']
+        data.columns = [xName, 'Data']
         return data
 
     def update_data(self):
@@ -492,7 +595,7 @@ class colorbar_rectangle():
         self.width = width
         self.height = height
 
-        for rect in self.colorplot.__colorbar_rectangles__:
+        for rect in self.colorplot._colorbar_rectangles:
             rect.active = False
         self.active = True
 
@@ -503,7 +606,7 @@ class colorbar_rectangle():
             if not contains:
                 return
             self.press = True
-            for rect in self.colorplot.__colorbar_rectangles__:
+            for rect in self.colorplot._colorbar_rectangles:
                 rect.active = False
             self.active = True
 

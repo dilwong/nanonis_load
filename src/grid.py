@@ -147,7 +147,7 @@ class plot():
         self.press = None
         self.click = None
         self.fft = fft
-        self.__nanonis_3ds__ = nanonis_3ds
+        self._nanonis_3ds = nanonis_3ds
 
         x_size = self.header['x_size (nm)']
         y_size = self.header['y_size (nm)']
@@ -376,7 +376,7 @@ class linecut(interactive_colorplot.colorplot):
         self.transformed_y_values = y_values
         self.sxm_fig.ax.plot(x_values, y_values, color='k')
         self.sxm_fig.ax.set_aspect('equal')
-        for bar in self.__draggables__:
+        for bar in self._draggables:
             if bar.direction[0] == 'h':
                 bar.sxm_circle = matplotlib.patches.Circle((x_values[bar.index], y_values[bar.index]), radius = 0.5, color = bar.color, zorder = 10)
                 self.sxm_fig.ax.add_patch(bar.sxm_circle)

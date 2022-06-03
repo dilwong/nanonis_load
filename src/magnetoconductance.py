@@ -42,16 +42,8 @@ elif sys.version_info.major == 3:
 else:
     print('Unknown Python version')
 
-# from scipy.spatial import Voronoi, voronoi_plot_2d
-
-# import matplotlib
+import matplotlib
 import matplotlib.pyplot as plt
-# import matplotlib.cm as cm
-
-# try:
-#     from . import interactive_colorplot
-# except (ImportError, ValueError):
-#     import interactive_colorplot
 
 class landau_fan():
 
@@ -67,13 +59,12 @@ class landau_fan():
 
         self.colormap(cmap, set = False)
         self.terminate = False
-        self.__draggables__ = []
-        self.__moving__ = False
-        self.__updating__ = False
-        # self.__lock__ = thread.allocate_lock()
-        self.__lock__ = self
+        self._draggables = []
+        self._moving = False
+        self._updating = False
+        self._lock = self
         
-        self.__load_data__(cache = cache)
+        self.load_data(cache = cache)
 
         if axes is None:
             self.fig = plt.figure()
@@ -108,11 +99,11 @@ class landau_fan():
         # xt, yt, zt, _, _ = zip(*self.data)
         # self.plot = self.ax.tripcolor(xt, yt, zt, cmap = self.cmap, rasterized = self.rasterized)
 
-        x_temp, y_temp = self.__mesh__()
+        x_temp, y_temp = self.mesh()
         self.pcolor = self.ax.pcolormesh(x_temp, y_temp, self.z, cmap = self.cmap, rasterized = self.rasterized)
         self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
 
-    def __load_data__(self, cache = None):
+    def load_data(self, cache = None):
         
         fileList = []
         for basename in self.basenames:
@@ -125,7 +116,7 @@ class landau_fan():
             cacheFiles = []
             cacheSpectra = []
         else:
-            if cache == 'update': # If __load_data is called by self.update()
+            if cache == 'update':
                 cacheFiles = self.files[:]
                 cacheSpectra = self.spectra_list[:]
             else:
@@ -149,10 +140,10 @@ class landau_fan():
                 spec.Bz = float(spec.header['Magnetic Field Z (T)'])
                 bias_list = spec.data['Bias calc (V)']
                 bias_index = min(range(len(bias_list)), key = lambda idx: abs(bias_list[idx] - self.bias))
-                spec.__selected_bias_index__ = bias_index
+                spec._selected_bias_index = bias_index
                 spec.didv_value = spec.data[self.channel][bias_index]
                 spec.gate = round(spec.gate, 5) # Avoid unlikely floating-point precision issues
-                spec.loop_idxs = [int(n) for n in spec.__filename__.split('.')[0].split('_')[-2:]]
+                spec.loop_idxs = [int(n) for n in spec._filename.split('.')[0].split('_')[-2:]]
                 self.spectra_list.append(spec)
         if cache is not None: # If the cached bias is not the same as the desired bias
             if cache != 'update':
@@ -161,7 +152,7 @@ class landau_fan():
                         bias_list = spec.data['Bias calc (V)']
                         bias_index = min(range(len(bias_list)), key = lambda idx: abs(bias_list[idx] - self.bias))
                         spec.didv_value = spec.data[self.channel][bias_index]
-                        spec.__selected_bias_index__ = bias_index
+                        spec._selected_bias_index = bias_index
         self.nSpectra = len(self.spectra_list)
         self.data = sorted([(s.gate, s.Bz, s.didv_value, s.loop_idxs[0], s.loop_idxs[1]) for s in self.spectra_list])
 
@@ -193,7 +184,7 @@ class landau_fan():
         self.z = ma.masked_invalid(z_temp)
 
     # Construct the array with quadrilateral vertices such that self.x and self.y are contained in the quadrilaterals
-    def __mesh__(self):
+    def mesh(self):
         x_temp = (self.x[1:,:]+self.x[:-1,:])*0.5
         x_temp = np.insert(x_temp, 0, self.x[0,:]-0.5*(self.x[1,:]-self.x[0,:]), axis = 0)
         x_temp = np.append(x_temp, np.reshape(self.x[-1,:]+0.5*(self.x[-1,:]-self.x[-2,:]), (1, -1)), axis = 0)
@@ -210,36 +201,36 @@ class landau_fan():
     
     def xlim(self, x_min, x_max):
         try:
-            self.__lock__.acquire()
+            self._lock.acquire()
             self.ax.set_xlim(x_min, x_max)
         except Exception:
             err_detect = traceback.format_exc()
             print(err_detect)
             raise
         finally:
-            self.__lock__.release()
+            self._lock.release()
 
     def ylim(self, y_min, y_max):
         try:
-            self.__lock__.acquire()
+            self._lock.acquire()
             self.ax.set_ylim(y_min, y_max)
         except Exception:
             err_detect = traceback.format_exc()
             print(err_detect)
             raise
         finally:
-            self.__lock__.release()
+            self._lock.release()
 
     def clim(self, c_min, c_max):
         try:
-            self.__lock__.acquire()
+            self._lock.acquire()
             self.pcolor.set_clim(c_min, c_max)
         except Exception:
             err_detect = traceback.format_exc()
             print(err_detect)
             raise
         finally:
-            self.__lock__.release()
+            self._lock.release()
 
     def colormap(self, cmap, set = True):
         if type(cmap) == np.ndarray:
@@ -259,7 +250,7 @@ class landau_fan():
 
         while not self.terminate:
             time.sleep(wait_time)
-            while(self.__moving__):
+            while(self._moving):
                 time.sleep(0.5)
             self.update()
 
@@ -273,10 +264,10 @@ class landau_fan():
 
     def update(self):
         try:
-            self.__lock__.acquire()
-            self.__updating__ = True
-            self.__load_data__(cache = 'update')
-            x_temp, y_temp = self.__mesh__()
+            self._lock.acquire()
+            self._updating = True
+            self.load_data(cache = 'update')
+            x_temp, y_temp = self.mesh()
             clim_min, clim_max = self.pcolor.get_clim()
             self.colorbar.remove()
             self.pcolor.remove()
@@ -289,8 +280,8 @@ class landau_fan():
             print(err_detect)
             raise
         finally:
-            self.__updating__ = False
-            self.__lock__.release()
+            self._updating = False
+            self._lock.release()
 
     def filter_data(self, axis, value, error):
         if (axis[0].upper() == 'X') or (axis[0].upper() == 'V'):
@@ -319,7 +310,7 @@ class drag_bar():
     def __init__(self, parent, direction = 't', axes = None, color = '#1f77b4', initial_value = 0, step = None, error = 0, marker = True):
         
         self.parent = parent
-        self.parent.__draggables__.append(self)
+        self.parent._draggables.append(self)
         self.parent.fig.active_drag_bar = self
         self.direction = direction
         self.color = color
@@ -328,11 +319,11 @@ class drag_bar():
 
         self.waiting = False
         self.press = False
-        self.__autoscale__ = False
+        self._autoscale = False
 
         try:
-            self.__lock__ = self.parent.__lock__
-            self.__lock__.acquire()
+            self._lock = self.parent._lock
+            self._lock.acquire()
 
             self.typicalDeltaX = np.mean(self.parent.x[1:,:]-self.parent.x[:-1,:])
             self.typicalDeltaY = np.mean(self.parent.y[:,1:]-self.parent.y[:,:-1])
@@ -414,7 +405,7 @@ class drag_bar():
                     return
                 self.press = True
                 self.parent.fig.active_drag_bar = self
-                self.parent.__moving__ = True
+                self.parent._moving = True
 
             def on_motion(event):
                 if self.waiting:
@@ -424,10 +415,10 @@ class drag_bar():
                 if self.press is False:
                     return
                 if (self.direction[0] == 'h') or (self.direction[0] == 't'):
-                    self.parent.__moving__ = True
+                    self.parent._moving = True
                     self.move_to(value = event.ydata)
                 elif self.direction[0] == 'v':
-                    self.parent.__moving__ = True
+                    self.parent._moving = True
                     self.move_to(value = event.xdata)
 
             def on_release(event):
@@ -435,10 +426,10 @@ class drag_bar():
                     if self.waiting:
                         return
                     self.press = False
-                    while self.parent.__updating__:
+                    while self.parent._updating:
                         time.sleep(0.1)
                     self.parent.fig.canvas.draw()
-                    self.parent.__moving__ = False
+                    self.parent._moving = False
                 except AttributeError:
                     pass
                 except Exception:
@@ -451,12 +442,12 @@ class drag_bar():
             def key_press(event):
                 if self.parent.fig.active_drag_bar is self:
                     if event.key == 'up':
-                        self.parent.__moving__ = True
+                        self.parent._moving = True
                         self.move_to(value = self.current_value + self.step)
                     if event.key == 'down':
-                        self.parent.__moving__ = True
+                        self.parent._moving = True
                         self.move_to(value = self.current_value - self.step)
-                    self.parent.__moving__ = False
+                    self.parent._moving = False
 
             self.parent.fig.canvas.mpl_connect('button_press_event', on_press)
             self.parent.fig.canvas.mpl_connect('motion_notify_event', on_motion)
@@ -470,11 +461,11 @@ class drag_bar():
             print(err_detect)
             raise
         finally:
-            self.__lock__.release()
+            self._lock.release()
 
     def move_to(self, value = None):
 
-        if self.parent.__updating__:
+        if self.parent._updating:
             return
         if value is None:
             return
@@ -485,7 +476,7 @@ class drag_bar():
         
         try:
             
-            self.__lock__.acquire()
+            self._lock.acquire()
 
             self.current_value = value
             indepVar = []
@@ -545,13 +536,13 @@ class drag_bar():
             print(err_detect)
             raise
         finally:
-            self.__lock__.release()
+            self._lock.release()
 
         self.plot.set_xdata(indepVar)
         self.plot.set_ydata(dependVar)
         self.plot.set_label(legendLabel)
         self.drag_ax.legend()
-        if (self.__autoscale__) and (len(self.data) != 0):
+        if (self._autoscale) and (len(self.data) != 0):
             self.xlim(minIndepVar, maxIndepVar)
             self.ylim(minDependVar, maxDependVar)
         self.drag_fig.canvas.draw()
@@ -565,11 +556,11 @@ class drag_bar():
         return self
 
     def autoscale_on(self):
-        self.__autoscale__ = True
+        self._autoscale = True
         return self
 
     def autoscale_off(self):
-        self.__autoscale__ = False
+        self._autoscale = False
         return self
 
     def marker(self, symbol = None, color = None, edgewidth = None):

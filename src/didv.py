@@ -40,8 +40,6 @@ try:
 except (ImportError, ValueError):
     import interactive_colorplot
 
-import traceback
-
 class spectrum():
 
     r"""
@@ -70,7 +68,7 @@ class spectrum():
         self.header = {}
         if filename is None:
             return
-        self.__filename__ = filename
+        self._filename = filename
         with open(filename,'r') as file_id:
             header_lines = 1
             while True:
@@ -403,10 +401,9 @@ class colorplot(interactive_colorplot.colorplot):
 
         self.arg_list = spectra_list
         self.state_for_update = {}
-        self.terminate = False
         self.initial_kwarg_state = kwargs
-        self.__bshift__ = bias_shift
-        self.__linecut_event_handlers__ = []
+        self._bshift = bias_shift
+        self._linecut_event_handlers = []
 
         self.spectra_list = parse_arguments(*spectra_list, cache = cache, constraint = constraint)
         if not self.spectra_list:
@@ -472,7 +469,7 @@ class colorplot(interactive_colorplot.colorplot):
             self.ax = axes
             self.fig = axes.figure
         if running_index:
-            self.index_list = np.array([int(s.__filename__.split('.')[0].split('_')[-1]) for s in self.spectra_list])
+            self.index_list = np.array([int(s._filename.split('.')[0].split('_')[-1]) for s in self.spectra_list])
             self.state_for_update['running_index'] = True
         else:
             self.state_for_update['running_index'] = False
@@ -490,8 +487,6 @@ class colorplot(interactive_colorplot.colorplot):
                 self.index_list = np.array(index_range)
             if gate_as_index and (start is None) and (increment is None):
                 self.index_list = np.array([spec.gate for spec in self.spectra_list])
-        # gate_transform depreciated
-        self.gate = self.index_list
 
         if over_iv is not None:
             self.data = self.data/self.current*(self.bias[:,np.newaxis] - over_iv[1])
@@ -500,124 +495,86 @@ class colorplot(interactive_colorplot.colorplot):
             self.data = self.data/self.current
         if post_transform is not None:
             self.data = post_transform(self.data)
-        #
 
         # TO DO: This program assumes all spectra have the same bias list.
         #        Implement the ability to handle spectra with different bias lists.
-        new_bias = (bias[1:] + bias[:-1]) * 0.5
-        new_bias = np.insert(new_bias, 0, bias[0] - (bias[1] - bias[0]) * 0.5)
-        new_index_range = (self.index_list[1:] + self.index_list[:-1]) * 0.5
-        new_index_range = np.insert(new_index_range, 0, self.index_list[0] - (self.index_list[1] - self.index_list[0]) * 0.5)
-        if (transform != 'diff') and (transform != 'derivative'):
-            new_bias = np.append(new_bias, bias[-1] + (bias[-1] - bias[-2]) * 0.5)
-            new_index_range = np.append(new_index_range, self.index_list[-1] + (self.index_list[-1] - self.index_list[-2]) * 0.5)
-        x, y = np.meshgrid(new_bias, new_index_range) # Will handle non-linear bias array
-        x = x.T
-        y = y.T
+        deriv = (transform == 'diff') or (transform == 'derivative')
         try:
-            bias_shift_len = len(bias_shift)
-            if bias_shift_len == len(self.index_list):
-                new_bias_shift = (np.array(bias_shift[1:]) + np.array(bias_shift[:-1])) * 0.5 # Is this the right thing to do?
-                new_bias_shift = np.insert(new_bias_shift, 0, bias_shift[0] - (bias_shift[1] - bias_shift[0]) * 0.5)
-                new_bias_shift = np.append(new_bias_shift, bias_shift[-1] + (bias_shift[-1] - bias_shift[-2]) * 0.5)
-                for idx, shift_val in enumerate(new_bias_shift): # Doesn't play nice with vertical dragbar
-                    x[:,idx] = x[:,idx] + shift_val
+            len(bias_shift)
+            xshift = True
         except TypeError:
-            pass
-        if tilt_by_bias:
-            y = y - new_bias.reshape((new_bias.size, 1))
-            self.state_for_update['tilt_by_bias'] = True
-        else:
-            self.state_for_update['tilt_by_bias'] = False
+            xshift = False
+        self.state_for_update['tilt_by_bias'] = tilt_by_bias
+        x, y = self.mesh(tilt = tilt_by_bias, xshift = xshift, derivative = deriv)
+
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = pcolor_cm, rasterized = rasterized)
         self.original_cmap = self.pcolor.cmap
         if colorbar:
             self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
         self.ax.set_xlabel('Sample Bias (V)')
         self.ax.set_ylabel(index_label)
-        self.__x_axes_limits__ = list(self.ax.get_xlim())
-        self.__y_axes_limits__ = list(self.ax.get_ylim())
+        self._x_axes_limits = list(self.ax.get_xlim())
+        self._y_axes_limits = list(self.ax.get_ylim())
 
         if dark:
             plt.style.use('default')
 
-        self.xlist = self.bias
-        self.ylist = self.gate
+    @property
+    def gate(self):
+        return self.ylist
 
-    def update(self):
+    @gate.setter
+    def gate(self, value):
+        self.ylist = value
 
-        try:
-            constraint = self.initial_kwarg_state['constraint'] if ('constraint' in self.initial_kwarg_state) else None
-            cache = self.initial_kwarg_state['cache'] if ('cache' in self.initial_kwarg_state) else None
-            self.spectra_list = parse_arguments(*self.arg_list, cache = cache, constraint = constraint)
+    @property
+    def index_list(self):
+        return self.ylist
 
-            # Only works for Input 2 (V) or similar types of data
+    @index_list.setter
+    def index_list(self, value):
+        self.ylist = value
+
+    @property
+    def bias(self):
+        return self.xlist
+
+    @bias.setter
+    def bias(self, value):
+        self.xlist = value
+    
+    @property
+    def _bshift(self):
+        return self._xshift
+
+    @_bshift.setter
+    def _bshift(self, value):
+        self._xshift = value
+
+    def load_data(self, cache = None):
+        constraint = self.initial_kwarg_state['constraint'] if ('constraint' in self.initial_kwarg_state) else None
+        cache = self.initial_kwarg_state['cache'] if ('cache' in self.initial_kwarg_state) else None
+        self.spectra_list = parse_arguments(*self.arg_list, cache = cache, constraint = constraint)
+        # Only works for Input 2 (V) or similar types of data
+        for spec in self.spectra_list:
+            spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
+            if 'double_lockin' in self.state_for_update:
+                spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
+                spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
+        if 'ping_remove' in self.state_for_update:
             for spec in self.spectra_list:
-                spec.data.rename(columns = {'Input 2 [AVG] (V)' : 'Input 2 (V)'}, inplace = True)
-                if 'double_lockin' in self.state_for_update:
-                    spec.data.rename(columns = {'Input 3 [AVG] (V)' : 'Input 3 (V)'}, inplace = True)
-                    spec.data['Input 2 (V)'] = (spec.data['Input 2 (V)'] + spec.data['Input 3 (V)']) * 0.5
-            if 'ping_remove' in self.state_for_update:
-                for spec in self.spectra_list:
-                    std_ping_remove(spec, self.initial_kwarg_state['ping_remove'])
-            bias = self.spectra_list[0].data.iloc[:,0].values # No bias_shift
-            if self.state_for_update['running_index']:
-                self.index_list = np.array([int(s.__filename__.split('.')[0].split('_')[-1]) for s in self.spectra_list])
-            else:
-                self.index_list = np.array([spec.gate for spec in self.spectra_list])
-            new_bias = (bias[1:] + bias[:-1]) * 0.5
-            new_bias = np.insert(new_bias, 0, bias[0] - (bias[1] - bias[0]) * 0.5)
-            new_index_range = (self.index_list[1:] + self.index_list[:-1]) * 0.5
-            new_index_range = np.insert(new_index_range, 0, self.index_list[0] - (self.index_list[1] - self.index_list[0]) * 0.5)
-            new_bias = np.append(new_bias, bias[-1] + (bias[-1] - bias[-2]) * 0.5)
-            new_index_range = np.append(new_index_range, self.index_list[-1] + (self.index_list[-1] - self.index_list[-2]) * 0.5)
-            x, y = np.meshgrid(new_bias, new_index_range) # Will handle non-linear bias array
-            x = x.T
-            y = y.T
-            if self.state_for_update['tilt_by_bias']:
-                y = y - new_bias.reshape((new_bias.size, 1))
-            cmap = self.pcolor.cmap
-            clim_min, clim_max = self.pcolor.get_clim()
-            self.bias = bias
-            self.gate = self.index_list
-            self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values  # No transform, multiply, over_iv
-            colorbar = self.initial_kwarg_state['colorbar'] if ('colorbar' in self.initial_kwarg_state) else True
-            if colorbar:
-                self.colorbar.remove()
-            self.pcolor.remove()
-            self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = cmap)
-            self.clim(clim_min, clim_max)
-            if colorbar:
-                self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
-            self.xlist = self.bias
-            self.ylist = self.gate
-            for dragbar in self.__draggables__:
-                dragbar.update_data()
-            self.fig.canvas.draw()
-        except:
-            err_detect = traceback.format_exc()
-            print(err_detect)
-            raise
-
-    def update_loop(self, wait_time):
-
-        import time
-        while not self.terminate:
-            time.sleep(wait_time)
-            self.update()
-
-    def refresh(self, wait_time = 5):
-
-        try:
-            import thread
-        except ModuleNotFoundError:
-            import _thread as thread
-
-        def handle_close(event):
-            self.terminate = True
-        self.fig.canvas.mpl_connect('close_event', handle_close)
-
-        thread.start_new_thread(self.update_loop, (wait_time, ))
+                std_ping_remove(spec, self.initial_kwarg_state['ping_remove'])
+        bias = self.spectra_list[0].data.iloc[:,0].values # No bias_shift
+        self.bias = bias
+        if self.state_for_update['running_index']:
+            self.index_list = np.array([int(s._filename.split('.')[0].split('_')[-1]) for s in self.spectra_list])
+        else:
+            self.index_list = np.array([spec.gate for spec in self.spectra_list])
+        self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values  # No transform, multiply, over_iv
+    
+    def update(self):
+        colorbar = self.initial_kwarg_state['colorbar'] if ('colorbar' in self.initial_kwarg_state) else True
+        super(colorplot, self).update(colorbar = colorbar, tilt = self.state_for_update['tilt_by_bias'])
 
     # Finds peaks and clusters them according to DBSCAN algorithm with parameters eps and min_samples
     # sigma controls the Gaussian smoothing of each index line before finding the local maxima
@@ -653,16 +610,16 @@ class colorplot(interactive_colorplot.colorplot):
                     points_list.append([xb, yg])
                     x, y = zip(*points_list)
                     self.ax.scatter(x, y, s = .2)
-        self.__peak_pairs__ = pairs
-        self.__peak_cluster_labels__ = label_list
+        self._peak_pairs = pairs
+        self._peak_cluster_labels = label_list
 
     def get_peak_cluster(self, bias, gate):
         gate_index = min(range(len(self.gate)), key = lambda idx: abs(self.gate[idx] - gate))
         bias_index = min(range(len(self.bias)), key = lambda idx: abs(self.bias[idx] - bias))
-        nearest_pair_index = min(range(len(self.__peak_pairs__)), key = lambda idx: (bias_index - self.__peak_pairs__[idx][0])**2 + (gate_index - self.__peak_pairs__[idx][1])**2)
-        cluster_index = self.__peak_cluster_labels__[nearest_pair_index]
-        cluster_list = [idx for idx, val in enumerate(self.__peak_cluster_labels__) if val == cluster_index]
-        relevant_pairs = [self.__peak_pairs__[idx] for idx in cluster_list]
+        nearest_pair_index = min(range(len(self._peak_pairs)), key = lambda idx: (bias_index - self._peak_pairs[idx][0])**2 + (gate_index - self._peak_pairs[idx][1])**2)
+        cluster_index = self._peak_cluster_labels[nearest_pair_index]
+        cluster_list = [idx for idx, val in enumerate(self._peak_cluster_labels) if val == cluster_index]
+        relevant_pairs = [self._peak_pairs[idx] for idx in cluster_list]
         x, y = list(zip(*relevant_pairs))
         x = list(x)
         y = list(y)
@@ -682,7 +639,7 @@ class colorplot(interactive_colorplot.colorplot):
         else:
             print("Error: Start Gate == End Gate")
             return
-        all_pairs = list(zip(self.__peak_pairs__,self.__peak_cluster_labels__))
+        all_pairs = list(zip(self._peak_pairs, self._peak_cluster_labels))
         starting_pairs = [pair for pair in all_pairs if pair[0][1] == start_gate_index]
         index_into_pair = min(range(len(starting_pairs)), key = lambda idx: abs(starting_pairs[idx][0][0] - start_bias_index))
         curr_bias_index = starting_pairs[index_into_pair][0][0]
@@ -719,9 +676,9 @@ class colorplot(interactive_colorplot.colorplot):
         x = x.T
         y = y.T
         try:
-            bias_shift_len = len(self.__bshift__)
+            bias_shift_len = len(self._bshift)
             if bias_shift_len == len(self.index_list):
-                for idx, shift_val in enumerate(self.__bshift__):
+                for idx, shift_val in enumerate(self._bshift):
                     x[:,idx] = x[:,idx] + shift_val
         except TypeError:
             pass
@@ -745,12 +702,8 @@ class colorplot(interactive_colorplot.colorplot):
         nState = [0, None, None]
         pickrad = 1.0
 
-        #for event_handler in self.__linecut_event_handlers__:
-        #    for itm in event_handler:
-        #        if itm is not None:
-        #        fig.canvas.mpl_disconnect(itm)
         event_handlers = [None, None, None]
-        self.__linecut_event_handlers__.append(event_handlers)
+        self._linecut_event_handlers.append(event_handlers)
 
         if axes is None:
             linecut_fig = plt.figure()
@@ -891,7 +844,7 @@ def batch_load(basename, file_range = None, attribute_list = None, cache = None,
 
     if cache is not None:
         spectrum_array = cache
-        file_list = [c.__filename__ for c in cache]
+        file_list = [c._filename for c in cache]
     else:
         file_list = []
         spectrum_array = []
@@ -972,10 +925,10 @@ def specsToHDF5(spectrumList, filename):
                 if 'data' not in f.keys():
                     f.create_group('data') # Unfortunately, track_order not available in older versions of h5py
                 for spec in spectrumList:
-                    f['data'].create_dataset(spec.__filename__, data = spec.data.values)
+                    f['data'].create_dataset(spec._filename, data = spec.data.values)
                     for key, item in spec.header.items():
-                        f['data'][spec.__filename__].attrs[key] = item
-                    f['data'][spec.__filename__].attrs['channels'] = '||'.join(spec.data.columns)
+                        f['data'][spec._filename].attrs[key] = item
+                    f['data'][spec._filename].attrs['channels'] = '||'.join(spec.data.columns)
                 size = len(f['data'])
                 f.attrs['size'] = size
                 while str(size) in f['data'].keys():
@@ -1023,7 +976,7 @@ def HDF5Tospecs(filename, cachedNames = None, returnNames = False, constraint = 
                     for key, item in dataset.attrs.items():
                         spec.header[key] = item
                     spec.data = pd.DataFrame(dataset[()], columns = dataset.attrs['channels'].split('||'))
-                    spec.__filename__ = name
+                    spec._filename = name
                     spec._fix_header()
                     specList.append(spec)
                     fileList.append(name)
@@ -1109,7 +1062,6 @@ class transform_colorplot(interactive_colorplot.colorplot):
     def __init__(self, *args, **kwargs):
 
         interactive_colorplot.colorplot.__init__(self)
-        self.terminate = False
         self.kwargs = kwargs
         pcolor_cm = kwargs['cmap'] if ('cmap' in kwargs) else 'RdYlBu_r'
         rasterized = kwargs['rasterized'] if ('rasterized' in kwargs) else False
@@ -1119,34 +1071,29 @@ class transform_colorplot(interactive_colorplot.colorplot):
         if not callable(args[0]):
             raise TypeError("First argument is not a callable function")
         self.func = args[0]
-        self.__cplots__ = args[1:]
-        self.xlist = self.__cplots__[0].bias # Assumes bias for all self.__cplots__ are the same
-        self.compute_data()
-        self.mesh()
+        self._cplots = args[1:]
+        self.xlist = self._cplots[0].bias # Assumes bias for all self._cplots are the same
+        self.load_data()
+        pseudocoordX, pseudocoordY = self.mesh()
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
-        self.pcolor = self.ax.pcolormesh(self.__pseudocoord_x__, self.__pseudocoord_y__, self.data, cmap = pcolor_cm, rasterized = rasterized)
+        self.pcolor = self.ax.pcolormesh(pseudocoordX, pseudocoordY, self.data, cmap = pcolor_cm, rasterized = rasterized)
         self.original_cmap = self.pcolor.cmap
         self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
         self.ax.set_xlabel('Sample Bias (V)')
         self.ax.set_ylabel('Gate (V)')
-        self.__x_axes_limits__ = list(self.ax.get_xlim())
-        self.__y_axes_limits__ = list(self.ax.get_ylim())
+        self._x_axes_limits = list(self.ax.get_xlim())
+        self._y_axes_limits = list(self.ax.get_ylim())
 
-    def compute_data(self):
+    def load_data(self):
 
         index_list_tmp = []
         data_tmp = []
-        for y_idx, y_val in enumerate(self.__cplots__[0].index_list):
+        for y_val in self._cplots[0].ylist:
             curr_row = []
             try:
-                for cplot_idx, cplot in enumerate(self.__cplots__):
-                    # if cplot_idx == 0:
-                    #     curr_row.append(cplot.data[:,y_idx])
-                    #     continue
-                    # # Use didv.query?
-                    # new_ind = np.where(cplot.index_list == y_val)[0][0]
-                    new_ind = np.where(cplot.index_list == y_val)[0][-1]
+                for cplot in self._cplots:
+                    new_ind = np.where(cplot.ylist == y_val)[0][-1]
                     curr_row.append(cplot.data[:, new_ind])
             except IndexError:
                 continue
@@ -1154,58 +1101,6 @@ class transform_colorplot(interactive_colorplot.colorplot):
             index_list_tmp.append(y_val)
         self.ylist = np.array(index_list_tmp)
         self.data = np.array(data_tmp).T
-
-    def mesh(self):
-        new_x = (self.xlist[1:] + self.xlist[:-1]) * 0.5
-        new_x = np.insert(new_x, 0, self.xlist[0] - (self.xlist[1] - self.xlist[0]) * 0.5)
-        new_y = (self.ylist[1:] + self.ylist[:-1]) * 0.5
-        new_y = np.insert(new_y, 0, self.ylist[0] - (self.ylist[1] - self.ylist[0]) * 0.5)
-        new_x = np.append(new_x, self.xlist[-1] + (self.xlist[-1] - self.xlist[-2]) * 0.5)
-        new_y = np.append(new_y, self.ylist[-1] + (self.ylist[-1] - self.ylist[-2]) * 0.5)
-        x, y = np.meshgrid(new_x, new_y) # Will handle non-linear bias array
-        self.__pseudocoord_x__ = x.T
-        self.__pseudocoord_y__ = y.T
-        # TO DO: Implement kwargs['tilt_by_bias'] and bias_shift
-
-    def update(self):
-
-        try:
-            self.compute_data()
-            self.mesh()
-            cmap = self.pcolor.cmap
-            clim_min, clim_max = self.pcolor.get_clim()
-            self.colorbar.remove()
-            self.pcolor.remove()
-            self.pcolor = self.ax.pcolormesh(self.__pseudocoord_x__, self.__pseudocoord_y__, self.data, cmap = cmap)
-            self.clim(clim_min, clim_max)
-            self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
-            for dragbar in self.__draggables__:
-                dragbar.update_data()
-            self.fig.canvas.draw()
-        except:
-            err_detect = traceback.format_exc()
-            print(err_detect)
-            raise
-
-    def update_loop(self, wait_time):
-
-        import time
-        while not self.terminate:
-            time.sleep(wait_time)
-            self.update()
-
-    def refresh(self, wait_time = 5):
-
-        try:
-            import thread
-        except ModuleNotFoundError:
-            import _thread as thread
-
-        def handle_close(event):
-            self.terminate = True
-        self.fig.canvas.mpl_connect('close_event', handle_close)
-
-        thread.start_new_thread(self.update_loop, (wait_time, ))
 
     @property
     def gate(self):
@@ -1280,14 +1175,14 @@ class multi_colorplot():
         self.drag_fig = plt.figure()
         self.drag_ax = self.drag_fig.subplots()
 
-        self.__color_cycle__ = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        self._color_cycle = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
 
     def add_data(self, *args, **kwargs):
 
         if self.count < self.max:
             new_colorplot = quick_colorplot(*args, axes = self.axes[len(self.colorplots)], **kwargs)
             self.colorplots.append(new_colorplot)
-            self.drag_bars.append(new_colorplot.drag_bar(direction = self.direction, axes = self.drag_ax, color = self.__color_cycle__[self.count]))
+            self.drag_bars.append(new_colorplot.drag_bar(direction = self.direction, axes = self.drag_ax, color = self._color_cycle[self.count]))
             self.count +=1
         else:
             print('No more data can be added to the figure!')
@@ -1468,13 +1363,15 @@ def query(spec_list, query_string):
         specified in query_string.
     '''
 
-    tree = ast.parse(query_string, mode = 'eval')
+    tree = ast.parse(query_string.strip(), mode = 'eval')
     tree = ast.fix_missing_locations(_QueryTransformer().visit(tree))
     code = compile(tree, '', mode = 'eval')
 
     fetched_spectra = []
     try:
         for spec in spec_list:
+            if not isinstance(spec, spectrum):
+                continue
             if eval(code):
                 fetched_spectra.append(spec)
     except:
@@ -1539,7 +1436,7 @@ def fixed_bias_plot(spectra_list, bias, lower_bound, upper_bound, axes = None, c
         gate_index_between = [enum_g[0] for enum_g in enumerate(gate_cp) if normalize[0] <= enum_g[1] <= normalize[1]]
         data_sum = np.nanmean(data[gate_index_between, :])
         if parent is not None:
-            parent[0].__norm_scale__[parent[1]] = data_sum
+            parent[0]._norm_scale[parent[1]] = data_sum
         data = data/data_sum
 
     new_gate = (gate[1:] + gate[:-1]) * 0.5
@@ -1623,7 +1520,7 @@ class landau_fan():
         self.clow = []
         self.chigh = []
         self.spectra_list = []
-        self.__basenames__ = []
+        self._basenames = []
         with open(filename, 'r') as f:
             f_idx = 0
             for fline in f:
@@ -1640,8 +1537,8 @@ class landau_fan():
                     self.chigh.append(float(field_line[2]))
                 except ValueError:
                     self.chigh.append(None)
-                self.__basenames__.append(field_line[3:])
-                if (cache is not None) and f_idx < len(cache.__basenames__) and (field_line[3:] == cache.__basenames__[f_idx]):
+                self._basenames.append(field_line[3:])
+                if (cache is not None) and f_idx < len(cache._basenames) and (field_line[3:] == cache._basenames[f_idx]):
                     if fast is False:
                         self.spectra_list.append(parse_arguments(*field_line[3:], cache = cache.spectra_list[f_idx]))
                     else:
@@ -1650,11 +1547,11 @@ class landau_fan():
                     self.spectra_list.append(parse_arguments(*field_line[3:]))
                 f_idx += 1
         if fast:
-            self.spectra_list[-1] = parse_arguments(*self.__basenames__[-1])
+            self.spectra_list[-1] = parse_arguments(*self._basenames[-1])
 
         self.num_fields = len(self.spectra_list)
-        self.__shift_gate__ = np.zeros(self.num_fields)
-        self.__norm_scale__ = np.zeros(self.num_fields)
+        self._shift_gate = np.zeros(self.num_fields)
+        self._norm_scale = np.zeros(self.num_fields)
 
         for spectra in self.spectra_list:
             for spec in spectra:
@@ -1685,7 +1582,7 @@ class landau_fan():
         self.ax = self.fig.add_subplot(111)
         self.bias = bias
         self.cond_lines = []
-        self.__draw_lines__ = []
+        self._draw_lines = []
 
         for idx in range(self.num_fields):
             field_value = self.magnet[idx]
@@ -1714,7 +1611,7 @@ class landau_fan():
                 lower_bound = field_value - width
                 upper_bound = field_value + width
             parent = [self, idx]
-            fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, cmap = cmap, shift_gate = self.__shift_gate__[idx], flip_bias = flip_bias, normalize = normalize, rasterized = rasterized, parent = parent)
+            fbplot = fixed_bias_plot(self.spectra_list[idx], bias, lower_bound, upper_bound, axes = self.ax, cmap = cmap, shift_gate = self._shift_gate[idx], flip_bias = flip_bias, normalize = normalize, rasterized = rasterized, parent = parent)
             self.cond_lines.append(fbplot)
             if self.chigh[idx] is not None:
                 if self.clow[idx] is not None:
@@ -1747,10 +1644,10 @@ class landau_fan():
 
     def add_gate_for_B(self, gate_shift, B):
         nearest_B_index = self.get_index_for_B(B)
-        self.__shift_gate__[nearest_B_index] += gate_shift
+        self._shift_gate[nearest_B_index] += gate_shift
 
     def reset_gate_shift(self):
-        self.__shift_gate__ = np.zeros(self.num_fields)
+        self._shift_gate = np.zeros(self.num_fields)
 
     def draw(self):
 
@@ -1781,31 +1678,31 @@ class landau_fan():
             for event_handler in event_handlers:
                 if event_handler is not None:
                     fig.canvas.mpl_disconnect(event_handler)
-            self.__draw_lines__.append(line[0][0])
+            self._draw_lines.append(line[0][0])
 
         event_handlers[0] = fig.canvas.mpl_connect('button_press_event', on_click)
 
     def delete_draw(self):
 
         try:
-            line = self.__draw_lines__.pop()
+            line = self._draw_lines.pop()
             line.remove()
         except IndexError:
             return
 
     def butterfly(self, gate, cmap = None, center = False, width = None, rasterized = False):
 
-        if np.any(self.__norm_scale__ == 0):
+        if np.any(self._norm_scale == 0):
             scale = None
         else:
-            scale = self.__norm_scale__
+            scale = self._norm_scale
 
         return butterfly(self, gate, cmap = cmap, center = center, width = width, rasterized = rasterized, scale = scale)
 
     def waterfall(self, vertical_shift):
 
-        self.__waterfall_fig__ = plt.figure()
-        self.__waterfall_ax__ = self.__waterfall_fig__.add_subplot(111)
+        self._waterfall_fig = plt.figure()
+        self._waterfall_ax = self._waterfall_fig.add_subplot(111)
 
         sorted_fields = sorted(self.magnet)
         for nth in range(self.num_fields):
@@ -1822,10 +1719,10 @@ class landau_fan():
             for spec in self.spectra_list[idx]:
                 gate.append(spec.gate)
                 data.append(spec.data['Input 2 (V)'][bias_index])
-            gate = np.array(gate) + self.__shift_gate__[idx]
+            gate = np.array(gate) + self._shift_gate[idx]
             data = np.array(data)/(chigh - clow) - clow + nth_field * vertical_shift
 
-            wat_line = self.__waterfall_ax__.plot(gate, data)
+            wat_line = self._waterfall_ax.plot(gate, data)
 
     # TO DO: Complete help()
     def help(self):
@@ -1844,9 +1741,9 @@ class butterfly():
             cmap = 'RdYlBu_r'
 
         # energy_vs_B plot
-        self.__evb_fig__ = plt.figure()
-        self.__evb_ax__ = self.__evb_fig__.add_subplot(111)
-        self.__evb_lines__ = []
+        self._evb_fig = plt.figure()
+        self._evb_ax = self._evb_fig.add_subplot(111)
+        self._evb_lines = []
         self.l_fan = landau_fan_object
         self.gate = gate
 
@@ -1881,8 +1778,8 @@ class butterfly():
                 scale_val = None
             else:
                 scale_val = scale[idx]
-            fgplot = fixed_gate_plot(self.l_fan.spectra_list[idx], gate, lower_bound, upper_bound, axes = self.__evb_ax__, cmap = cmap, rasterized = rasterized, scale = scale_val)
-            self.__evb_lines__.append(fgplot)
+            fgplot = fixed_gate_plot(self.l_fan.spectra_list[idx], gate, lower_bound, upper_bound, axes = self._evb_ax, cmap = cmap, rasterized = rasterized, scale = scale_val)
+            self._evb_lines.append(fgplot)
             if fgplot is None:
                 continue
             if self.l_fan.chigh[idx] is not None:
@@ -1897,21 +1794,21 @@ class butterfly():
 
     def clim_for_B(self, c_min, c_max, B):
         nearest_B_index = self.get_index_for_B(B)
-        self.__evb_lines__[nearest_B_index].set_clim(c_min, c_max)
+        self._evb_lines[nearest_B_index].set_clim(c_min, c_max)
 
     def clim_for_all(self, c_min, c_max):
-        for line in self.__evb_lines__:
+        for line in self._evb_lines:
             if line is not None:
                 line.set_clim(c_min, c_max)
 
     def get_clim_for_B(self, B):
         nearest_B_index = self.get_index_for_B(B)
-        return self.__evb_lines__[nearest_B_index].get_clim()
+        return self._evb_lines[nearest_B_index].get_clim()
 
     def waterfall(self, vertical_shift):
 
-        self.__waterfall_fig__ = plt.figure()
-        self.__waterfall_ax__ = self.__waterfall_fig__.add_subplot(111)
+        self._waterfall_fig = plt.figure()
+        self._waterfall_ax = self._waterfall_fig.add_subplot(111)
 
         sorted_fields = sorted(self.l_fan.magnet)
         for nth in range(self.l_fan.num_fields):
@@ -1926,11 +1823,11 @@ class butterfly():
                 print("ERROR: GATE NOT FOUND. WATERFALL DOES NOT LOOK FOR NEAREST GATE")
                 print("SKIPPING...")
                 continue
-            clow, chigh = self.__evb_lines__[idx].get_clim()
+            clow, chigh = self._evb_lines[idx].get_clim()
             bias = np.array(spectra[0].data['Bias calc (V)'])
             data = np.array(spectra[0].data['Input 2 (V)'])/(chigh - clow) - clow + nth_field * vertical_shift
 
-            wat_line = self.__waterfall_ax__.plot(bias, data)
+            wat_line = self._waterfall_ax.plot(bias, data)
 
 def quick_landau_fan(filename, bias = 0, cmap = None, center = False, width = None, rasterized = False, normalize = False, cache = None, fast = False):
 
