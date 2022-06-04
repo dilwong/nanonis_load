@@ -2,7 +2,17 @@ r"""
 Loading and plotting dI/dV data with two gate voltages.
 Tested in Python 2.7 and 3.
 
-dual(gate)
+To load the data from filename:
+    data = dual_gate(filename)
+
+To plot the data (sample bias vs gate vs dI/dV):
+    data.plotBiasGate1(gate2) # gate2 is fixed here
+    data.plotBiasGate2(gate1) # gate1 is fixed here
+
+To plot the data (gate1 vs gate2 vs dI/dV for a fixed sample bias):
+    fixedBiasPlot = data.plotGate1Gate2(data.nearest_bias(bias))
+    fixedBiasPlot.linecut() # To create an interactive line profile
+
 """
 
 import numpy as np
