@@ -291,7 +291,6 @@ class plot():
     def ylim(self, y_min, y_max):
         self.ax.set_ylim(y_min, y_max)
 
- # TO DO: Change self.gate, self.bias, self.index_list to @property getters/setters
 class colorplot(interactive_colorplot.colorplot):
 
     r"""
@@ -398,6 +397,7 @@ class colorplot(interactive_colorplot.colorplot):
         tilt_by_bias = kwargs['tilt_by_bias'] if ('tilt_by_bias' in kwargs) else False
         constraint = kwargs['constraint'] if ('constraint' in kwargs) else None
         cache = kwargs['cache'] if ('cache' in kwargs) else None
+        yaxis = kwargs['yaxis'] if ('yaxis' in kwargs) else None
 
         self.arg_list = spectra_list
         self.state_for_update = {}
@@ -485,8 +485,17 @@ class colorplot(interactive_colorplot.colorplot):
                 self.index_list = np.linspace(index_range[0],index_range[1],len(self.spectra_list))
             if len(index_range) == len(self.spectra_list):
                 self.index_list = np.array(index_range)
-            if gate_as_index and (start is None) and (increment is None):
-                self.index_list = np.array([spec.gate for spec in self.spectra_list])
+            if yaxis is None:
+                if gate_as_index and (start is None) and (increment is None):
+                    self.index_list = np.array([spec.gate for spec in self.spectra_list])
+            else:
+                self.state_for_update['yaxis'] = yaxis
+                if isinstance(yaxis, str):
+                    self.ylist = np.array([getattr(spec, yaxis) for spec in self.spectra_list])
+                elif callable(yaxis):
+                    self.ylist = np.array([yaxis(spec) for spec in self.spectra_list])
+                else:
+                    raise TypeError('yaxis is of unrecognized type')
 
         if over_iv is not None:
             self.data = self.data/self.current*(self.bias[:,np.newaxis] - over_iv[1])
@@ -569,7 +578,14 @@ class colorplot(interactive_colorplot.colorplot):
         if self.state_for_update['running_index']:
             self.index_list = np.array([int(s._filename.split('.')[0].split('_')[-1]) for s in self.spectra_list])
         else:
-            self.index_list = np.array([spec.gate for spec in self.spectra_list])
+            if 'yaxis' in self.state_for_update:
+                yaxis = self.state_for_update['yaxis']
+                if isinstance(yaxis, str):
+                    self.ylist = np.array([getattr(spec, yaxis) for spec in self.spectra_list])
+                elif callable(yaxis):
+                    self.ylist = np.array([yaxis(spec) for spec in self.spectra_list])
+            else:
+                self.ylist = np.array([spec.gate for spec in self.spectra_list])
         self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values  # No transform, multiply, over_iv
     
     def update(self):
@@ -713,6 +729,9 @@ class colorplot(interactive_colorplot.colorplot):
             linecut_fig = linecut_ax.figure
 
         def nearest_pt(bias_val, gate_val):
+            # The Euclidean distance is used here.
+            # Perhaps this is not desirable because bias and gate are on very different scales.
+            # Consider normalizing each axis.
             dist_matrix = (x - bias_val)**2 + (y - gate_val)**2
             return np.argmin(dist_matrix)
 
