@@ -859,7 +859,7 @@ class colorplot(interactive_colorplot.colorplot):
 
         event_handlers[0] = fig.canvas.mpl_connect('button_press_event', on_click)
 
-    def to_html(self, filename):
+    def to_html(self, filename, library = 'altair'):
 
         r'''
         Save the colorplot in an interactive HTML file, using Vega/Vega-Lite.
@@ -869,147 +869,176 @@ class colorplot(interactive_colorplot.colorplot):
         Arguments:
             filename : str
                 Output filename
+            library : str (defaults to 'altair')
+                Plotting library used to generate HTML file.
+                So far, only 'altair' and 'hvplot' are implemented.
         '''
-
-        import altair as alt
-        from bs4 import BeautifulSoup
-
-        x, y = self.mesh()
-        x = np.repeat(x, 2, axis = 0)[1:-1,:-1].reshape(self.data.shape[0], 2, -1).transpose((1,0,2)).reshape(2,-1)
-        y = np.repeat(y, 2, axis = 1)[:-1,1:-1].reshape(-1, 2).T
-
-        epsilonX = 1e-3
-        epsilonY = 1e-3
-
-        df = pd.DataFrame({
-            'didv' : self.data.ravel(),
-            'x' : x[0, :] - epsilonX,
-            'x2' : x[1, :] + epsilonX,
-            'y' : y[0, :] - epsilonX,
-            'y2' : y[1, :] + epsilonY
-        })
-
-        mindidv = np.min(df['didv'])
-        maxdidv = np.max(df['didv'])
-        nRes = 100
-        didvresolution = (maxdidv - mindidv) / nRes
-        # selectorMin = alt.selection_single(
-        #     name = "minSelect",
-        #     fields = ['min'],
-        #     bind = alt.binding_range(min = mindidv, max = maxdidv, step = didvresolution, name = 'min'), init = {'min': mindidv}
-        # )
-        selectorMin = alt.selection_single(
-            name = "minSelect",
-            fields = ['minimum'],
-            bind = alt.binding_range(min = mindidv, max = maxdidv, step = didvresolution, name = 'Color Minimum'), init = {'minimum': mindidv}
-        )
-        selectorMax = alt.selection_single(
-            name = "maxSelect",
-            fields = ['maximum'],
-            bind = alt.binding_range(min = mindidv, max = maxdidv, step = didvresolution, name = 'Color Maximum'), init = {'maximum': maxdidv}
-        )
-
-        base = alt.Chart(df)
-
-        minX = np.min(x)
-        minY = np.min(y)
-        maxX = np.max(x)
-        maxY = np.max(y)
-
-        try:
-            colorScheme = alt.Color('didv_clamped', type = 'quantitative', scale = alt.Scale(scheme = 'redyellowblue', reverse = True), title = 'dI/dV')
-        except:
-            colorScheme = alt.Color('didv_clamped', type = 'quantitative', sort = 'descending', scale = alt.Scale(scheme = 'redyellowblue'), title = 'dI/dV')
-
-        cplot = base.properties(
-            height = 500,
-            width = 300
-        ).mark_rect().transform_calculate(
-            didv_clamped = 'clamp(datum.didv, minSelect.minimum, maxSelect.maximum)'
-        ).encode(
-            x = alt.X(
-                'x',
-                type = 'quantitative',
-                scale = alt.Scale(domain = (minX, maxX), nice = False),
-                title = 'Sample Bias (V)',
-                axis = alt.Axis(grid = False)
-            ),
-            y = alt.Y(
-                'y',
-                type = 'quantitative',
-                scale = alt.Scale(domain = (minY, maxY), nice = False),
-                title = 'Gate Voltage (V)',
-                axis = alt.Axis(grid = False)
-            ),
-            x2 = alt.X2('x2'),
-            y2 = alt.Y2('y2'),
-            fill = colorScheme,
-            #stroke = colorScheme,
-        ).interactive().add_selection(selectorMin).add_selection(selectorMax)
-
-        mouseSelection = alt.selection_single(
-            name = 'mouseSelect', fields = ['y'], nearest = True, on = 'mouseover', empty = 'none', clear = 'mouseout'
-        )
-
-        rule = base.properties(
-            height = 500,
-            width = 300
-        ).mark_rule().transform_calculate(
-            gate = '(datum.y + datum.y2) / 2.0'
-        ).encode(
-            y = 'y:Q',
-            opacity = alt.condition(mouseSelection, alt.value(0.5), alt.value(0)),
-            tooltip=[alt.Tooltip('gate', type='quantitative')]
-        ).add_selection(mouseSelection)
-
-        lineplot = base.properties(
-            height = 200,
-            width = 300
-        ).transform_filter('datum.y == mouseSelect.y').mark_line().transform_calculate(
-            centered_x = (alt.datum.x2 + alt.datum.x) / 2.0
-        ).encode(
-            x = alt.X('centered_x:Q', title = 'Sample Bias (V)'),
-            y = alt.Y('didv:Q', title = 'dI/dV')
-        )
-
-        background = alt.Chart(
-            {"values": [{"x": minX, "y": mindidv}, {"x": maxX, "y": maxdidv}]}
-        ).transform_filter(
-            '!isValid(mouseSelect.y)'
-        ).mark_point(opacity = 0).encode(
-            x='x:Q',
-            y='y:Q'
-        ).properties(
-            height = 200,
-            width = 300
-        ).add_selection(mouseSelection)
 
         if filename[-5:] != '.html':
             filename = filename + '.html'
+        
+        if library.lower() == 'altair':
+            import altair as alt
+            from bs4 import BeautifulSoup
 
-        alt.vconcat((cplot + rule), (lineplot + background)).save(filename)
+            x, y = self.mesh()
+            x = np.repeat(x, 2, axis = 0)[1:-1,:-1].reshape(self.data.shape[0], 2, -1).transpose((1,0,2)).reshape(2,-1)
+            y = np.repeat(y, 2, axis = 1)[:-1,1:-1].reshape(-1, 2).T
 
-        with open(filename, 'r') as f:
-            soup = BeautifulSoup(f.read(), features = 'html.parser')
-        soup.find('style').append(
-            """form.vega-bindings {
-            position: absolute;
-            top: 0px;
-            }
-            """ +
-            # """
-            # div.chart-wrapper {
-            #   margin-top: 1.5cm;
-            # }
-            # """
-            """
-            canvas {
-            margin-top: 1.5cm;
-            }
-            """
-        )
-        with open(filename, 'w') as f:
-            f.write(str(soup))
+            epsilonX = 1e-3
+            epsilonY = 1e-3
+
+            df = pd.DataFrame({
+                'didv' : self.data.ravel(),
+                'x' : x[0, :] - epsilonX,
+                'x2' : x[1, :] + epsilonX,
+                'y' : y[0, :] - epsilonX,
+                'y2' : y[1, :] + epsilonY
+            })
+
+            mindidv = np.min(df['didv'])
+            maxdidv = np.max(df['didv'])
+            nRes = 100
+            didvresolution = (maxdidv - mindidv) / nRes
+            # selectorMin = alt.selection_single(
+            #     name = "minSelect",
+            #     fields = ['min'],
+            #     bind = alt.binding_range(min = mindidv, max = maxdidv, step = didvresolution, name = 'min'), init = {'min': mindidv}
+            # )
+            selectorMin = alt.selection_single(
+                name = "minSelect",
+                fields = ['minimum'],
+                bind = alt.binding_range(min = mindidv, max = maxdidv, step = didvresolution, name = 'Color Minimum'), init = {'minimum': mindidv}
+            )
+            selectorMax = alt.selection_single(
+                name = "maxSelect",
+                fields = ['maximum'],
+                bind = alt.binding_range(min = mindidv, max = maxdidv, step = didvresolution, name = 'Color Maximum'), init = {'maximum': maxdidv}
+            )
+
+            base = alt.Chart(df)
+
+            minX = np.min(x)
+            minY = np.min(y)
+            maxX = np.max(x)
+            maxY = np.max(y)
+
+            try:
+                colorScheme = alt.Color('didv_clamped', type = 'quantitative', scale = alt.Scale(scheme = 'redyellowblue', reverse = True), title = 'dI/dV')
+            except:
+                colorScheme = alt.Color('didv_clamped', type = 'quantitative', sort = 'descending', scale = alt.Scale(scheme = 'redyellowblue'), title = 'dI/dV')
+
+            cplot = base.properties(
+                height = 500,
+                width = 300
+            ).mark_rect().transform_calculate(
+                didv_clamped = 'clamp(datum.didv, minSelect.minimum, maxSelect.maximum)'
+            ).encode(
+                x = alt.X(
+                    'x',
+                    type = 'quantitative',
+                    scale = alt.Scale(domain = (minX, maxX), nice = False),
+                    title = 'Sample Bias (V)',
+                    axis = alt.Axis(grid = False)
+                ),
+                y = alt.Y(
+                    'y',
+                    type = 'quantitative',
+                    scale = alt.Scale(domain = (minY, maxY), nice = False),
+                    title = 'Gate Voltage (V)',
+                    axis = alt.Axis(grid = False)
+                ),
+                x2 = alt.X2('x2'),
+                y2 = alt.Y2('y2'),
+                fill = colorScheme,
+                #stroke = colorScheme,
+            ).interactive().add_selection(selectorMin).add_selection(selectorMax)
+
+            mouseSelection = alt.selection_single(
+                name = 'mouseSelect', fields = ['y'], nearest = True, on = 'mouseover', empty = 'none', clear = 'mouseout'
+            )
+
+            rule = base.properties(
+                height = 500,
+                width = 300
+            ).mark_rule().transform_calculate(
+                gate = '(datum.y + datum.y2) / 2.0'
+            ).encode(
+                y = 'y:Q',
+                opacity = alt.condition(mouseSelection, alt.value(0.5), alt.value(0)),
+                tooltip=[alt.Tooltip('gate', type='quantitative')]
+            ).add_selection(mouseSelection)
+
+            lineplot = base.properties(
+                height = 200,
+                width = 300
+            ).transform_filter('datum.y == mouseSelect.y').mark_line().transform_calculate(
+                centered_x = (alt.datum.x2 + alt.datum.x) / 2.0
+            ).encode(
+                x = alt.X('centered_x:Q', title = 'Sample Bias (V)'),
+                y = alt.Y('didv:Q', title = 'dI/dV')
+            )
+
+            background = alt.Chart(
+                {"values": [{"x": minX, "y": mindidv}, {"x": maxX, "y": maxdidv}]}
+            ).transform_filter(
+                '!isValid(mouseSelect.y)'
+            ).mark_point(opacity = 0).encode(
+                x='x:Q',
+                y='y:Q'
+            ).properties(
+                height = 200,
+                width = 300
+            ).add_selection(mouseSelection)
+
+            alt.vconcat((cplot + rule), (lineplot + background)).save(filename)
+
+            with open(filename, 'r') as f:
+                soup = BeautifulSoup(f.read(), features = 'html.parser')
+            soup.find('style').append(
+                """form.vega-bindings {
+                position: absolute;
+                top: 0px;
+                }
+                """ +
+                # """
+                # div.chart-wrapper {
+                #   margin-top: 1.5cm;
+                # }
+                # """
+                """
+                canvas {
+                margin-top: 1.5cm;
+                }
+                """
+            )
+            with open(filename, 'w') as f:
+                f.write(str(soup))
+        elif (library.lower() == 'hvplot') or (library.lower() == 'holoviews'):
+            if sys.version_info.major == 2:
+                raise NotImplementedError(r"Not compatible with Python 2.")
+            elif sys.version_info.major == 3:
+                if sys.version_info.minor < 6:
+                    raise NotImplementedError(r"Python version must be at least 3.6.")
+            import holoviews as hv
+            import hvplot
+            hv.extension('bokeh')
+            qmesh=hv.QuadMesh((self.xlist, self.ylist, self.data.T))
+            qmesh.opts(
+                clim = (np.min(self.data), np.max(self.data)),
+                frame_height = 800,
+                frame_width = 600,
+                cmap = 'RdYlBu_r',
+                colorbar = True,
+                xlabel = 'Sample Bias (V)',
+                ylabel = 'Gate Voltage (V)')
+            hvplot.save(qmesh, filename)
+        elif library.lower() == 'bokeh':
+            raise NotImplementedError(r"Use library = 'hvplot' option instead.")
+        elif library.lower() == 'plotly':
+            raise NotImplementedError(r"plotly backend not yet implemented.")
+        else:
+            raise NotImplementedError(r"Unknown plotting library.")
 
 def batch_load(basename, file_range = None, attribute_list = None, cache = None, constraint = None):
 
