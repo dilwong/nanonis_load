@@ -100,8 +100,11 @@ class dual_gate:
                 If gate2 is a float, plotBiasGate1 will display all data for a fixed second gate equal to gate2.
                 Maybe in the future, gate2 can also be a string or callable that filters which voltages on the 
                 second gate are looked at.
+
+        Returns:
+            didv.colorplot
         '''
-        self._plotBiasGate(gate2, yaxis = 'gate1', **kwargs)
+        return self._plotBiasGate(gate2, yaxis = 'gate1', **kwargs)
 
     def plotBiasGate2(self, gate1, **kwargs):
         r'''
@@ -113,8 +116,11 @@ class dual_gate:
                 If gate1 is a float, plotBiasGate2 will display all data for a fixed first gate equal to gate1.
                 Maybe in the future, gate1 can also be a string or callable that filters which voltages on the 
                 first gate are looked at.
+        
+        Returns:
+            didv.colorplot
         '''
-        self._plotBiasGate(gate1, yaxis= 'gate2', **kwargs)
+        return self._plotBiasGate(gate1, yaxis= 'gate2', **kwargs)
 
     def _plotBiasGate(self, gate, yaxis, **kwargs):
         r'''
