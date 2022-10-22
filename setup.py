@@ -14,5 +14,5 @@ if __name__ == "__main__":
     url = 'https://github.com/dilwong/nanonis_load',
     install_requires = requirements,
     packages=['nanonis_load'],
-    package_dir={'nanonis_load': 'src'}
+    package_dir={'nanonis_load': 'nanonis_load'}
     )
