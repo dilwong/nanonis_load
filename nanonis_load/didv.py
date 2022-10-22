@@ -402,8 +402,6 @@ class colorplot(interactive_colorplot.colorplot):
         cache = kwargs['cache'] if ('cache' in kwargs) else None
         yaxis = kwargs['yaxis'] if ('yaxis' in kwargs) else None
 
-        self.image_data_markers = {'V_s': [], 'V_g': []} # Contains V_s and V_g for images that were taken and will be drawn as markers on the plot
-
         self.arg_list = spectra_list
         self.state_for_update = {}
         self.initial_kwarg_state = kwargs
@@ -532,6 +530,16 @@ class colorplot(interactive_colorplot.colorplot):
 
         if dark:
             plt.style.use('default')
+
+        # Image data markers
+        self.img_data_points = {'filename': [],'V_s': [], 'V_g': []} # Contains filename, V_s and V_g for images that were taken and will be drawn as markers on the plot
+        self.marker_annot = self.ax.annotate("", xy=(0,0), xytext=(20,20),textcoords="offset points",
+                    bbox=dict(boxstyle="round", fc="w"),
+                    arrowprops=dict(arrowstyle="->"))
+        self.marker_annot.set_visible(False)
+        self.img_data_scatter = self.ax.scatter([], [])
+        plt.ion()
+        self.fig.canvas.mpl_connect("motion_notify_event", self.hover)
 
     @property
     def gate(self):
@@ -1045,7 +1053,7 @@ class colorplot(interactive_colorplot.colorplot):
         else:
             raise NotImplementedError(r"Unknown plotting library.")
 
-    def add_image_data_marker(self, filename):
+    def add_img_data_marker(self, filename):
         '''
         Loads an sxm file "filename", grabs its sample bias and gate voltage, and adds 
         it to self.image_data_marker
@@ -1067,35 +1075,64 @@ class colorplot(interactive_colorplot.colorplot):
             # Only add the marker if it's within the bounds of the spectrum
             for sample_bias in sample_biases:
                 if (sample_bias > np.amin(self.xlist)) & (sample_bias < np.amax(self.xlist)) & (gate_voltage > np.amin(self.ylist)) & (gate_voltage < np.amax(self.ylist)):
-                    self.image_data_markers['V_s'].append(sample_bias)
-                    self.image_data_markers['V_g'].append(gate_voltage)
+                    self.img_data_points['filename'].append(filename)
+                    self.img_data_points['V_s'].append(sample_bias)
+                    self.img_data_points['V_g'].append(gate_voltage)
         else:
             sample_bias = float(header[':BIAS:'][0]) # If this throws an exception, then the header is probably fucked up
             if (sample_bias > np.amin(self.xlist)) & (sample_bias < np.amax(self.xlist)) & (gate_voltage > np.amin(self.ylist)) & (gate_voltage < np.amax(self.ylist)):
-                    self.image_data_markers['V_s'].append(sample_bias)
-                    self.image_data_markers['V_g'].append(gate_voltage)
+                self.img_data_points['filename'].append(filename)
+                self.img_data_points['V_s'].append(sample_bias)
+                self.img_data_points['V_g'].append(gate_voltage)
 
-    def add_image_data_marker_manual(self, sample_bias, gate_voltage):
+    def add_img_data_marker_manual(self, filename, sample_bias, gate_voltage):
         '''
         Manually adds a sample bias and gate voltage to the image data markers.
         '''
         if (sample_bias > np.amin(self.xlist)) & (sample_bias < np.amax(self.xlist)) & (gate_voltage > np.amin(self.ylist)) & (gate_voltage < np.amax(self.ylist)):
-            self.image_data_markers['V_s'].append(sample_bias)
-            self.image_data_markers['V_g'].append(gate_voltage)
+            self.img_data_points['filename'].append(filename)
+            self.img_data_points['V_s'].append(sample_bias)
+            self.img_data_points['V_g'].append(gate_voltage)
 
-    def auto_add_image_data_markers(self):
+    def auto_add_img_data_markers(self):
         '''
         Automatically loops over all files in directory and adds image data markers using them.
         '''
         for filename in os.listdir('.'):
             if filename.endswith('.sxm'):
-                self.add_image_data_marker(filename)
+                self.add_img_data_marker(filename)
 
-    def plot_image_data_markers(self, s=100, color=(0, 0, 0, 1), zorder=1000, **kwargs):
+    def plot_img_data_markers(self, s=100, color=(0, 0, 0, 1), zorder=1000, **kwargs):
         '''
         Plots the image data markers.
         '''
-        self.image_data_marker_plot = self.ax.scatter(self.image_data_markers['V_s'], self.image_data_markers['V_g'], s=s, color=color, zorder=zorder, **kwargs)
+        self.img_data_scatter = self.ax.scatter(self.img_data_points['V_s'], self.img_data_points['V_g'], s=s, color=color, zorder=zorder, **kwargs)
+
+    def update_annotation(self, ind):
+        index = ind["ind"][0]
+        pos = self.img_data_scatter.get_offsets()[index]
+        self.marker_annot.xy = pos
+        text = self.img_data_points["filename"][index]
+        self.marker_annot.set_text(text)
+        self.marker_annot.get_bbox_patch().set_facecolor((0, 1, 0, 1))
+        self.marker_annot.get_bbox_patch().set_alpha(0.4)
+
+    def hover(self, event):
+        '''
+        Handles mouse hover events over scatter plot points.
+        '''
+        visible = self.marker_annot.get_visible()
+        if event.inaxes == self.ax:
+            cont, ind = self.img_data_scatter.contains(event)
+            if cont:
+                self.update_annotation(ind)
+                self.marker_annot.set_visible(True)
+                self.fig.canvas.draw_idle()
+            else:
+                if visible:
+                    self.marker_annot.set_visible(False)
+                    self.fig.canvas.draw_idle()
+        
 
 def batch_load(basename, file_range = None, attribute_list = None, cache = None, constraint = None):
 
