@@ -1091,11 +1091,11 @@ class colorplot(interactive_colorplot.colorplot):
             if filename.endswith('.sxm'):
                 self.add_image_data_marker(filename)
 
-    def plot_image_data_markers(self, s=100, fc=(0, 0, 0, 1), zorder=1000, **kwargs):
+    def plot_image_data_markers(self, s=100, color=(0, 0, 0, 1), zorder=1000, **kwargs):
         '''
         Plots the image data markers.
         '''
-        self.image_data_marker_plot = self.ax.scatter(self.image_data_markers['V_s'], self.image_data_markers['V_g'], s=s, fc=fc, zorder=zorder, **kwargs)
+        self.image_data_marker_plot = self.ax.scatter(self.image_data_markers['V_s'], self.image_data_markers['V_g'], s=s, color=color, zorder=zorder, **kwargs)
 
 def batch_load(basename, file_range = None, attribute_list = None, cache = None, constraint = None):
 
