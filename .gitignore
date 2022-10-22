@@ -1,3 +1,6 @@
 *.pyc
 .DS_Store
+
+build/
+nanonis_load.egg-info/
 *.ipynb

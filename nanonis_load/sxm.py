@@ -10,6 +10,8 @@ import scipy.signal
 
 #import traceback
 
+#TO DO: Maybe flip backwards direction?
+
 #Loads .sxm files into Nanonis
 class sxm():
 
@@ -31,42 +33,9 @@ class sxm():
     def __init__(self, filename):
 
         self.data = {}
-        self.header = {}
-
-        with open(filename,'rb') as f:
-            file = f.read()
-
-        header_text = ''
-        idx = 0
-        while True:
-            try:
-                header_text += chr(file[idx]) # Python 3
-            except TypeError:
-                header_text += file[idx] # Python 2
-            idx += 1
-            if ':SCANIT_END:' in header_text:
-                break
-        header_text = header_text.split('\n')
-        for header_line in header_text:
-            if ':' in header_line:
-                prev_header = header_line
-                self.header[header_line] = []
-            else:
-                self.header[prev_header].append(header_line)
-        temp = self.header[':SCAN_PIXELS:'][0].strip().split()
-        self.header['x_pixels'] = int(temp[0])
-        self.header['y_pixels'] = int(temp[1])
-        temp = self.header[':SCAN_RANGE:'][0].strip().split()
-        self.header['x_range (nm)'] = float(temp[0])*1e9
-        self.header['y_range (nm)'] = float(temp[1])*1e9
-        temp = self.header[':SCAN_OFFSET:'][0].strip().split()
-        self.header['x_center (nm)'] = float(temp[0])*1e9
-        self.header['y_center (nm)'] = float(temp[1])*1e9
-        temp = self.header[':SCAN_ANGLE:'][0].strip().split()
-        self.header['angle'] = float(temp[0]) #Clockwise
-        self.header['direction'] = self.header[':SCAN_DIR:'][0]
-        temp = [chnls.split('\t') for chnls  in self.header[':DATA_INFO:'][1:-1]] # Will this handle multipass?
-        self.header['channels'] = [chnls[2].replace('_', ' ') + ' (' + chnls[3] + ')' for chnls in temp]
+        extra_info = [None, None]
+        self.header = sxm_header(filename, extra_info = extra_info)
+        file, idx = extra_info
 
         raw_data = file[idx+5:]
         #size_in_bytes = 4 * self.header['x_pixels'] * self.header['y_pixels']
@@ -78,16 +47,20 @@ class sxm():
             self.data[channel_name] = [channel_data[0:size].reshape(self.header['y_pixels'], self.header['x_pixels'])]
             self.data[channel_name].append(channel_data[size:2*size].reshape(self.header['y_pixels'], self.header['x_pixels']))
 
-def sxm_header(filename):
+def sxm_header(filename, extra_info = None):
     '''
     Returns the header of an sxm file as a dict
     '''
+    if extra_info is None:
+        extra_info = [None, None]
+
     if not filename.endswith('.sxm'):
         return {}
     header = {}
 
     with open(filename,'rb') as f:
         file = f.read()
+    extra_info[0] = file
 
     header_text = ''
     idx = 0
@@ -127,9 +100,11 @@ def sxm_header(filename):
         header['multipass biases'] = []
         for row in multipass_rows:
             header['multipass biases'].append(float(row.split('\t')[6]))
-        return header
-    except:
-        return header
+    except (KeyError, IndexError):
+        pass
+        
+    extra_info[1] = idx
+    return header
 
 #direction = 0 for forward, direction = 1 for backwards
 class plot():
