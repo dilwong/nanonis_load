@@ -1062,8 +1062,8 @@ class colorplot(interactive_colorplot.colorplot):
             print("Warning: " + filename + " does not have the gate voltage stored in it")
             return
 
-        if 'multipass bias' in header.keys():
-            sample_biases = header['multipass bias']
+        if 'multipass biases' in header.keys():
+            sample_biases = header['multipass biases']
             # Only add the marker if it's within the bounds of the spectrum
             for sample_bias in sample_biases:
                 if (sample_bias > np.amin(self.xlist)) & (sample_bias < np.amax(self.xlist)) & (gate_voltage > np.amin(self.ylist)) & (gate_voltage < np.amax(self.ylist)):
