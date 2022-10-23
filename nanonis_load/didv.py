@@ -29,6 +29,7 @@ import os
 import ast
 
 import glob
+import re
 
 from .sxm import sxm_header
 
@@ -535,7 +536,8 @@ class colorplot(interactive_colorplot.colorplot):
         self.img_data_points = {'filename': [],'V_s': [], 'V_g': []} # Contains filename, V_s and V_g for images that were taken and will be drawn as markers on the plot
         self.marker_annot = self.ax.annotate("", xy=(0,0), xytext=(20,20),textcoords="offset points",
                     bbox=dict(boxstyle="round", fc="w"),
-                    arrowprops=dict(arrowstyle="->"))
+                    arrowprops=dict(arrowstyle="->"),
+                    zorder=2000)
         self.marker_annot.set_visible(False)
         self.img_data_scatter = self.ax.scatter([], [])
         plt.ion()
@@ -1094,28 +1096,48 @@ class colorplot(interactive_colorplot.colorplot):
             self.img_data_points['V_s'].append(sample_bias)
             self.img_data_points['V_g'].append(gate_voltage)
 
-    def auto_add_img_data_markers(self):
+    # Should this clear add_img_data_marker first to avoid duplicates?
+    #
+    # Sometimes multiple images have the same (V_s, V_g) because the data was retaken
+    # or because some images are incomplete. How should this be handled?
+    def auto_add_img_data_markers(self, basename = None, start = 0, end = 99999, index_list = None):
         '''
-        Automatically loops over all files in directory and adds image data markers using them.
+        Automatically loops over all files in current working directory and adds image data markers using them.
         '''
         for filename in os.listdir('.'):
             if filename.endswith('.sxm'):
-                self.add_img_data_marker(filename)
+                if basename is None:
+                    self.add_img_data_marker(filename)
+                else:
+                    regex = re.compile(basename + '_?([0-9]+).sxm')
+                    match = regex.match(filename)
+                    if (match is not None) and (start <= int(match.group(1)) <= end):
+                        if index_list is not None:
+                            if int(match.group(1)) not in index_list: # Should check if index_list is a list, tuple, set, etc...
+                                continue
+                        self.add_img_data_marker(filename)
+
+    def auto_add_image_data_markers(self, *args, **kwargs):
+        self.auto_add_img_data_markers(*args, **kwargs)
 
     def plot_img_data_markers(self, s=100, color=(0, 0, 0, 1), zorder=1000, **kwargs):
         '''
         Plots the image data markers.
         '''
         self.img_data_scatter = self.ax.scatter(self.img_data_points['V_s'], self.img_data_points['V_g'], s=s, color=color, zorder=zorder, **kwargs)
+        self.ax.zorder = 100
+
+    def plot_image_data_markers(self, *args, **kwargs):
+        self.plot_img_data_markers(*args, **kwargs)
 
     def update_annotation(self, ind):
         index = ind["ind"][0]
         pos = self.img_data_scatter.get_offsets()[index]
         self.marker_annot.xy = pos
-        text = self.img_data_points["filename"][index]
+        text = self.img_data_points["filename"][index] + '\nVs = ' + str(self.img_data_points["V_s"][index]) + ' V' + '\nVg = ' + str(self.img_data_points["V_g"][index]) + ' V'
         self.marker_annot.set_text(text)
         self.marker_annot.get_bbox_patch().set_facecolor((0, 1, 0, 1))
-        self.marker_annot.get_bbox_patch().set_alpha(0.4)
+        self.marker_annot.get_bbox_patch().set_alpha(0.6)
 
     def hover(self, event):
         '''

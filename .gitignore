@@ -3,4 +3,6 @@
 
 build/
 nanonis_load.egg-info/
+dist/
+
 *.ipynb
