@@ -31,10 +31,11 @@ import ast
 import glob
 import re
 
-from .sxm import sxm_header
+from . import sxm
 
 import matplotlib.pyplot as plt
 from matplotlib import cm
+import matplotlib
 
 # BUG: interactive_colorplot.drag_bar appears to be broken in the MacOSX backend on matplotlib 3.5.1
 # To fix this issue, either use a different backend (such as Qt5Agg) or downgrade to matplotlib 3.4.3
@@ -541,7 +542,8 @@ class colorplot(interactive_colorplot.colorplot):
         self.marker_annot.set_visible(False)
         self.img_data_scatter = self.ax.scatter([], [])
         plt.ion()
-        self.fig.canvas.mpl_connect("motion_notify_event", self.hover)
+        self.fig.canvas.mpl_connect("motion_notify_event", self.on_hover)
+        self.fig.canvas.mpl_connect("button_press_event", self.on_click)
 
     @property
     def gate(self):
@@ -1063,7 +1065,7 @@ class colorplot(interactive_colorplot.colorplot):
         If the gate voltage is not stored in the file, nothing is added to 
         self.image_data_marker.
         '''
-        header = sxm_header(filename)
+        header = sxm.sxm_header(filename)
 
         # Try getting gate voltage
         try:
@@ -1116,9 +1118,20 @@ class colorplot(interactive_colorplot.colorplot):
                             if int(match.group(1)) not in index_list: # Should check if index_list is a list, tuple, set, etc...
                                 continue
                         self.add_img_data_marker(filename)
+        self.plot_img_data_markers()
 
     def auto_add_image_data_markers(self, *args, **kwargs):
+        '''
+        For name convenience
+        '''
         self.auto_add_img_data_markers(*args, **kwargs)
+
+    def add_img_data_markers_by_time(self, start_time, end_time):
+        '''
+        Adds files in current working directory if their last modified time is between 
+        start_time and end_time.
+        '''
+
 
     def plot_img_data_markers(self, s=100, color=(0, 0, 0, 1), zorder=1000, **kwargs):
         '''
@@ -1139,7 +1152,7 @@ class colorplot(interactive_colorplot.colorplot):
         self.marker_annot.get_bbox_patch().set_facecolor((0, 1, 0, 1))
         self.marker_annot.get_bbox_patch().set_alpha(0.6)
 
-    def hover(self, event):
+    def on_hover(self, event):
         '''
         Handles mouse hover events over scatter plot points.
         '''
@@ -1154,6 +1167,43 @@ class colorplot(interactive_colorplot.colorplot):
                 if visible:
                     self.marker_annot.set_visible(False)
                     self.fig.canvas.draw_idle()
+
+    def on_click(self, event):
+        '''
+        Handles click events
+        '''
+        if event.inaxes == self.ax:
+            cont, ind = self.img_data_scatter.contains(event)
+            if cont:
+                index = ind["ind"][0]
+                image_sxm = sxm.sxm(self.img_data_points['filename'][index])
+                x_range = image_sxm.header['x_range (nm)']
+                y_range = image_sxm.header['y_range (nm)']
+                data = image_sxm.process_data(image_sxm.data["Z (m)"][0], process='subtract plane')
+                data_fft = np.abs(np.fft.fftshift(np.fft.fft2(data)))
+                
+                data_vmin = np.mean(data) - 2.5*np.std(data)
+                data_vmax = np.mean(data) + 2.5*np.std(data)
+
+                cdict = {'red' : [(0.0, 0.0, 0.0),
+                                  (0.5, 1.0, 1.0),
+                                  (1.0, 1.0, 1.0)],
+                         'green' : [(0.0, 0.0, 0.0),
+                                    (0.5, 0.35, 0.35),
+                                    (1.0, 1.0, 1.0)],
+                         'blue' : [(0.0, 0.0, 0.0),
+                                   (0.5, 0.0, 0.0),
+                                   (1.0, 1.0, 1.0)]}
+                cmap = matplotlib.colors.LinearSegmentedColormap('my_cmap', cdict)
+                
+                fig, ax = plt.subplots(1, 2)
+                ax[0].imshow(data, cmap=cmap, vmin=data_vmin, vmax=data_vmax, origin='lower', extent=(0, x_range, 0, y_range))
+                ax[1].imshow(data_fft, cmap='gist_heat', vmin=0, vmax=0.3*np.std(data_fft), origin='lower', extent = (-1/(2*x_range), 1/(2*x_range), -1/(2*y_range), 1/(2*y_range)))
+
+                plt.show()
+                
+
+
         
 
 def batch_load(basename, file_range = None, attribute_list = None, cache = None, constraint = None):
