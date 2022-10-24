@@ -1,6 +1,6 @@
 # nanonis_load
 
-A library for loading, plotting, and analyzing data from Nanonis SPM files. This library is written to be compatible with both Python 2.7 and Python 3.
+A library for loading, plotting, and analyzing data from Nanonis SPM files. This library is no longer compatible with Python 2.7.
 
 The following file types are supported:  
 > *.dat Bias Spectroscopy files  
