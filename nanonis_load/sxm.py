@@ -722,15 +722,16 @@ class plot():
             pick_caller = picker_factory(spectrum_inst, s_plt)
             self.fig.canvas.mpl_connect('pick_event', pick_caller)
 
+    # TO DO: Add window functions.
     def fft(self):
         self.fft_fig = plt.figure()
         self.fft_ax = self.fft_fig.add_subplot(111)
         fft_array = np.absolute(np.fft.fft2(self.image_data))
         max_fft = np.max(fft_array[1:-1,1:-1])
         fft_array = np.fft.fftshift(fft_array)
-        fft_x = -np.pi/self.data.header['x_range (nm)']
-        fft_y = np.pi/self.data.header['y_range (nm)']
-        self.fft_plot = self.fft_ax.imshow(fft_array, extent=[fft_x, -fft_x, -fft_y, fft_y],origin='lower')
+        fft_x = -np.pi/(self.data.header['x_range (nm)']/self.data.header['x_pixels'])
+        fft_y = np.pi/(self.data.header['y_range (nm)']/self.data.header['y_pixels'])
+        self.fft_plot = self.fft_ax.imshow(fft_array, extent = [fft_x, -fft_x, -fft_y, fft_y], origin = 'lower')
         self.fft_fig.colorbar(self.fft_plot, ax = self.fft_ax)
         self.fft_clim(0,max_fft)
 
