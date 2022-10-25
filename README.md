@@ -1,6 +1,8 @@
 # nanonis_load
 
-A library for loading, plotting, and analyzing data from Nanonis SPM files. This library is no longer compatible with Python 2.7.
+A library for loading, plotting, and analyzing data from Nanonis SPM files, with special attention to $dI/dV(V_s, V_g)$ data from gate-tunable samples in the field-effect transistor (FET) geometry.
+
+This library is no longer compatible with Python 2.7 as of version 3.0.0.
 
 The following file types are supported:  
 > *.dat Bias Spectroscopy files  
