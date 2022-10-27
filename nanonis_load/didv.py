@@ -1202,7 +1202,6 @@ class colorplot(interactive_colorplot.colorplot):
                 cmap = matplotlib.colors.LinearSegmentedColormap('my_cmap', cdict)
                 
                 fig, ax = plt.subplots(1, 2)
-                fig.canvas.set_window_title(f"{self.img_data_points['filename'][index]}, Vg={round(self.img_data_points['V_g'][index], 2)} V, Vs={round(self.img_data_points['V_s'][index]*1000, 0)} mV")
                 
                 copy_text_to_clipboard(f"{self.img_data_points['filename'][index]}\n\nVg = {round(self.img_data_points['V_g'][index], 2)} V\nVs = {round(self.img_data_points['V_s'][index]*1000, 0)} mV\nI = {image_sxm.get_setpoint_current()}\nProportional = {image_sxm.get_proportional()}")
 
