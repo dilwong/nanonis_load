@@ -10,7 +10,7 @@ if __name__ == "__main__":
         requirements = [line.strip() for line in requirements if line.strip()]
 
     setuptools.setup(name = 'nanonis_load',
-    version = '2.4.2',
+    version = '3.0.2',
     author = 'Dillon Wong',
     author_email = '',
     description = 'Load Nanonis data',

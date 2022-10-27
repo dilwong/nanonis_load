@@ -1181,6 +1181,8 @@ class colorplot(interactive_colorplot.colorplot):
                 image_sxm = sxm.sxm(self.img_data_points['filename'][index])
                 x_range = image_sxm.header['x_range (nm)']
                 y_range = image_sxm.header['y_range (nm)']
+                x_pixels = image_sxm.header['x_pixels']
+                y_pixels = image_sxm.header['y_pixels']
                 data = image_sxm.process_data(image_sxm.data["Z (m)"][0], process='subtract plane')
                 data_fft = np.abs(np.fft.fftshift(np.fft.fft2(data)))
                 
@@ -1199,8 +1201,20 @@ class colorplot(interactive_colorplot.colorplot):
                 cmap = matplotlib.colors.LinearSegmentedColormap('my_cmap', cdict)
                 
                 fig, ax = plt.subplots(1, 2)
-                ax[0].imshow(data, cmap=cmap, vmin=data_vmin, vmax=data_vmax, origin='lower', extent=(0, x_range, 0, y_range))
-                ax[1].imshow(data_fft, cmap='gist_heat', vmin=0, vmax=self.fft_cscale*np.std(data_fft), origin='lower', extent = (-1/(2*x_range), 1/(2*x_range), -1/(2*y_range), 1/(2*y_range)))
+                ax[0].imshow(data,
+                            cmap=cmap,
+                            vmin=data_vmin,
+                            vmax=data_vmax,
+                            origin='lower',
+                            extent=(0, x_range, 0, y_range)
+                )
+                ax[1].imshow(data_fft,
+                            cmap='gist_heat',
+                            vmin=0,
+                            vmax=0.3*np.std(data_fft),
+                            origin='lower',
+                            extent = (-np.pi/(x_range/x_pixels), np.pi/(x_range/x_pixels), -np.pi/(y_range/y_pixels), np.pi/(y_range/y_pixels))
+                )
 
                 plt.show()
                 

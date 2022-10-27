@@ -1,11 +1,15 @@
 # nanonis_load
 
-A library for loading, plotting, and analyzing data from Nanonis SPM files. This library is no longer compatible with Python 2.7.
+A library for loading, plotting, and analyzing data from Nanonis SPM files, with special attention to $dI/dV(V_s, V_g)$ data from gate-tunable samples in the field-effect transistor (FET) geometry.
+
+This library is no longer compatible with Python 2.7 as of version 3.0.0.
 
 The following file types are supported:  
 > *.dat Bias Spectroscopy files  
 > *.3ds Grid Spectroscopy files  
 > *.sxm Image files  
+
+## Basic Usage
 
 To load and plot .dat files:
 ```
@@ -40,3 +44,10 @@ UP and DOWN arrow keys on the keyboard can be used to iterate over different ene
 1D line grids can be loaded and plotted using the grid.linecut class.
 
 There are two different ways of creating Landau fans in this library: didv.landau_fan and magnetoconductance.landau_fan.
+
+## Installation
+
+This package is available on PyPI:
+```
+pip install nanonis-load
+```

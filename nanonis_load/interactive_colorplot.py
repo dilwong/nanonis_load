@@ -48,6 +48,7 @@ class colorplot(object):
         self.fig = None
         self.ax = None
         self.pcolor = None
+        self._fake_lock = False
         self._terminate_update_loop = None
         self._draggables = []
         self._drag_h_count = 0
@@ -115,6 +116,7 @@ class colorplot(object):
     def update(self, colorbar = True, tilt = False, xshift = False, derivative = False):
 
         try:
+            self._fake_lock = True
             self.load_data()
             pseudocoordX, pseudocoordY = self.mesh(tilt = tilt, xshift = xshift, derivative = derivative)
             cmap = self.pcolor.cmap
@@ -133,6 +135,8 @@ class colorplot(object):
             err_detect = traceback.format_exc()
             print(err_detect)
             raise
+        finally:
+            self._fake_lock = False
 
     def _update_loop(self, wait_time):
 
@@ -409,7 +413,7 @@ class drag_bar():
             self.colorplot.fig.active_drag_bar = self
 
         def on_motion(event):
-            if self.waiting:
+            if self.waiting or self.colorplot._fake_lock:
                 return
             if event.inaxes != self.colorplot.ax:
                 return
@@ -425,8 +429,6 @@ class drag_bar():
                 return
             self.refresh_legend()
             self.press = False
-            if not self.fast:
-                self.colorplot.fig.canvas.draw()
             self.phantom_index_value = self.index_value
 
         def key_press(event):
