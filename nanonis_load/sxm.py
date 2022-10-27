@@ -54,7 +54,28 @@ class sxm():
             split_comment = self.header[':COMMENT:'][0].split()
             return float(split_comment[split_comment.index('V_g') + 2])
         except ValueError:
-            return 0.0
+            return np.nan
+
+    def get_sample_bias(self):
+        '''
+        Returns the sample bias in V.
+        '''
+        return float(self.header[':BIAS:'][0])
+
+    def get_setpoint_current(self) -> float:
+        '''
+        Returns the setpoint current in pA. 
+        '''
+        return float(self.header[':Z-CONTROLLER:'][1].split('\t')[3].split()[0])*1e12
+
+    def get_proportional(self) -> float:
+        '''
+        Returns the proportional gain in pm.
+        '''
+        return float(self.header[':Z-CONTROLLER:'][1].split('\t')[4].split()[0])*1e12
+
+    def get_proportional_gain(self):
+        return self.get_proportional()
 
     def get_data(self, channel : str, direction : int = 0) -> np.ndarray:
 

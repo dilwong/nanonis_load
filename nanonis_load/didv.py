@@ -27,6 +27,7 @@ import time
 import sys
 import os
 import ast
+from tkinter import Tk
 
 import glob
 import re
@@ -1201,6 +1202,10 @@ class colorplot(interactive_colorplot.colorplot):
                 cmap = matplotlib.colors.LinearSegmentedColormap('my_cmap', cdict)
                 
                 fig, ax = plt.subplots(1, 2)
+                fig.canvas.set_window_title(f"{self.img_data_points['filename'][index]}, Vg={round(self.img_data_points['V_g'][index], 2)} V, Vs={round(self.img_data_points['V_s'][index]*1000, 0)} mV")
+                
+                copy_text_to_clipboard(f"{self.img_data_points['filename'][index]}\n\nVg = {round(self.img_data_points['V_g'][index], 2)} V\nVs = {round(self.img_data_points['V_s'][index]*1000, 0)} mV\nI = {image_sxm.get_setpoint_current()}\nProportional = {image_sxm.get_proportional()}")
+
                 ax[0].imshow(data,
                             cmap=cmap,
                             vmin=data_vmin,
@@ -1215,7 +1220,7 @@ class colorplot(interactive_colorplot.colorplot):
                             origin='lower',
                             extent = (-np.pi/(x_range/x_pixels), np.pi/(x_range/x_pixels), -np.pi/(y_range/y_pixels), np.pi/(y_range/y_pixels))
                 )
-
+                fig.canvas.draw()
                 plt.show()
                 
 
@@ -2216,3 +2221,11 @@ def quick_landau_fan(filename, bias = 0, cmap = None, center = False, width = No
     fan = landau_fan(filename, cache = cache , fast = fast)
     fan.plot(bias, cmap = cmap, center = center, width = width, rasterized = rasterized, normalize = normalize)
     return fan
+
+def copy_text_to_clipboard(text : str):
+    r = Tk()
+    r.withdraw()
+    r.clipboard_clear()
+    r.clipboard_append(text)
+    r.update()
+    r.destroy()
