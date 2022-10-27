@@ -1211,7 +1211,7 @@ class colorplot(interactive_colorplot.colorplot):
                 ax[1].imshow(data_fft,
                             cmap='gist_heat',
                             vmin=0,
-                            vmax=0.3*np.std(data_fft),
+                            vmax=self.fft_cscale*np.std(data_fft),
                             origin='lower',
                             extent = (-np.pi/(x_range/x_pixels), np.pi/(x_range/x_pixels), -np.pi/(y_range/y_pixels), np.pi/(y_range/y_pixels))
                 )
