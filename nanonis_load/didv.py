@@ -1203,7 +1203,7 @@ class colorplot(interactive_colorplot.colorplot):
                 
                 fig, ax = plt.subplots(1, 2)
                 
-                copy_text_to_clipboard(f"{self.img_data_points['filename'][index]}\n\nVg = {round(self.img_data_points['V_g'][index], 2)} V\nVs = {round(self.img_data_points['V_s'][index]*1000, 0)} mV\nI = {image_sxm.get_setpoint_current()}\nProportional = {image_sxm.get_proportional()}")
+                copy_text_to_clipboard(f"{self.img_data_points['filename'][index]}\n\nVg = {round(self.img_data_points['V_g'][index], 2)} V\nVs = {round(self.img_data_points['V_s'][index]*1000, 2)} mV\nI = {image_sxm.get_setpoint_current()} pA\nProportional = {image_sxm.get_proportional()} pm")
 
                 ax[0].imshow(data,
                             cmap=cmap,
