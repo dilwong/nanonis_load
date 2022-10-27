@@ -544,6 +544,8 @@ class colorplot(interactive_colorplot.colorplot):
         plt.ion()
         self.fig.canvas.mpl_connect("motion_notify_event", self.on_hover)
         self.fig.canvas.mpl_connect("button_press_event", self.on_click)
+        self.real_cscale = 2.5
+        self.fft_cscale = 0.5
 
     @property
     def gate(self):
@@ -1182,8 +1184,8 @@ class colorplot(interactive_colorplot.colorplot):
                 data = image_sxm.process_data(image_sxm.data["Z (m)"][0], process='subtract plane')
                 data_fft = np.abs(np.fft.fftshift(np.fft.fft2(data)))
                 
-                data_vmin = np.mean(data) - 2.5*np.std(data)
-                data_vmax = np.mean(data) + 2.5*np.std(data)
+                data_vmin = np.mean(data) - self.real_cscale*np.std(data)
+                data_vmax = np.mean(data) + self.real_cscale*np.std(data)
 
                 cdict = {'red' : [(0.0, 0.0, 0.0),
                                   (0.5, 1.0, 1.0),
@@ -1198,7 +1200,7 @@ class colorplot(interactive_colorplot.colorplot):
                 
                 fig, ax = plt.subplots(1, 2)
                 ax[0].imshow(data, cmap=cmap, vmin=data_vmin, vmax=data_vmax, origin='lower', extent=(0, x_range, 0, y_range))
-                ax[1].imshow(data_fft, cmap='gist_heat', vmin=0, vmax=0.3*np.std(data_fft), origin='lower', extent = (-1/(2*x_range), 1/(2*x_range), -1/(2*y_range), 1/(2*y_range)))
+                ax[1].imshow(data_fft, cmap='gist_heat', vmin=0, vmax=self.fft_cscale*np.std(data_fft), origin='lower', extent = (-1/(2*x_range), 1/(2*x_range), -1/(2*y_range), 1/(2*y_range)))
 
                 plt.show()
                 
