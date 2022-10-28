@@ -28,6 +28,7 @@ import sys
 import os
 import ast
 from .util import copy_text_to_clipboard
+from .util import get_cmap_from_digitalizer_file
 
 import glob
 import re
@@ -547,6 +548,13 @@ class colorplot(interactive_colorplot.colorplot):
         self.fig.canvas.mpl_connect("button_press_event", self.on_click)
         self.real_cscale = 2.5
         self.fft_cscale = 0.5
+        
+        #Set default colormap
+        path_to_this_file = os.path.dirname(__file__)
+        r_file = os.path.join(path_to_this_file, 'cmaps/w_r.csv')
+        g_file = os.path.join(path_to_this_file, 'cmaps/w_g.csv')
+        b_file = os.path.join(path_to_this_file, 'cmaps/w_b.csv')
+        self.sxm_cmap = get_cmap_from_digitalizer_file(r_file, g_file, b_file)
 
     @property
     def gate(self):
@@ -1189,31 +1197,20 @@ class colorplot(interactive_colorplot.colorplot):
                 
                 data_vmin = np.mean(data) - self.real_cscale*np.std(data)
                 data_vmax = np.mean(data) + self.real_cscale*np.std(data)
-
-                cdict = {'red' : [(0.0, 0.0, 0.0),
-                                  (0.5, 1.0, 1.0),
-                                  (1.0, 1.0, 1.0)],
-                         'green' : [(0.0, 0.0, 0.0),
-                                    (0.5, 0.35, 0.35),
-                                    (1.0, 1.0, 1.0)],
-                         'blue' : [(0.0, 0.0, 0.0),
-                                   (0.5, 0.0, 0.0),
-                                   (1.0, 1.0, 1.0)]}
-                cmap = matplotlib.colors.LinearSegmentedColormap('my_cmap', cdict)
                 
                 fig, ax = plt.subplots(1, 2)
                 
                 copy_text_to_clipboard(image_sxm.get_onenote_info_string())
 
                 ax[0].imshow(data,
-                            cmap=cmap,
+                            cmap=self.sxm_cmap,
                             vmin=data_vmin,
                             vmax=data_vmax,
                             origin='lower',
                             extent=(0, x_range, 0, y_range)
                 )
                 ax[1].imshow(data_fft,
-                            cmap='gist_heat',
+                            cmap=self.sxm_cmap,
                             vmin=0,
                             vmax=self.fft_cscale*np.std(data_fft),
                             origin='lower',
