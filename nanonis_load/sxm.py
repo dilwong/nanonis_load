@@ -10,6 +10,65 @@ from typing import Union, Tuple, Optional
 
 # TO DO: drift correction
 
+def sxm_header(filename, extra_info = None):
+    '''
+    Returns the header of an sxm file as a dict
+    '''
+    if extra_info is None:
+        extra_info = [None, None]
+
+    if not filename.endswith('.sxm'):
+        return {}
+    header = {}
+
+    with open(filename,'rb') as f:
+        file = f.read()
+    extra_info[0] = file
+
+    header_text = ''
+    idx = 0
+    while True:
+        try:
+            header_text += chr(file[idx]) # Python 3
+        except TypeError:
+            header_text += file[idx] # Python 2
+        idx += 1
+        if ':SCANIT_END:' in header_text:
+            break
+    header_text = header_text.split('\n')
+    for header_line in header_text:
+        if header_line.startswith(':') and header_line.endswith(':'):
+            prev_header = header_line
+            header[header_line] = []
+        else:
+            header[prev_header].append(header_line)
+    temp = header[':SCAN_PIXELS:'][0].strip().split()
+    header['x_pixels'] = int(temp[0])
+    header['y_pixels'] = int(temp[1])
+    temp = header[':SCAN_RANGE:'][0].strip().split()
+    header['x_range (nm)'] = float(temp[0])*1e9
+    header['y_range (nm)'] = float(temp[1])*1e9
+    temp = header[':SCAN_OFFSET:'][0].strip().split()
+    header['x_center (nm)'] = float(temp[0])*1e9
+    header['y_center (nm)'] = float(temp[1])*1e9
+    temp =header[':SCAN_ANGLE:'][0].strip().split()
+    header['angle'] = float(temp[0]) #Clockwise
+    header['direction'] = header[':SCAN_DIR:'][0]
+    temp = [chnls.split('\t') for chnls  in header[':DATA_INFO:'][1:-1]] # Will this handle multipass?
+    header['channels'] = [chnls[2].replace('_', ' ') + ' (' + chnls[3] + ')' for chnls in temp]
+
+    try:
+        multipass_header = header[':Multipass-Config:'][0]
+        multipass_rows = header[':Multipass-Config:'][1:]
+        header['multipass biases'] = []
+        for row in multipass_rows:
+            header['multipass biases'].append(float(row.split('\t')[6]))
+    except (KeyError, IndexError):
+        pass
+        
+    extra_info[1] = idx
+    return header
+
 #Loads .sxm files from Nanonis
 class sxm():
 
@@ -28,7 +87,7 @@ class sxm():
             Each entry in each list is a numpy array that contains the numeric data.
     '''
 
-    def __init__(self, filename):
+    def __init__(self, filename : str):
 
         self.data = {}
         extra_info = [None, None]
@@ -49,14 +108,32 @@ class sxm():
                 self.data[channel_name] = [np.nan_to_num(channel_data[0:size].reshape(self.header['y_pixels'], self.header['x_pixels']))]
                 self.data[channel_name].append(np.nan_to_num(np.fliplr(channel_data[size:2*size].reshape(self.header['y_pixels'], self.header['x_pixels'])))) # Backward channel
 
-    def get_gate_voltage(self):
-        try:
-            split_comment = self.header[':COMMENT:'][0].split()
-            return float(split_comment[split_comment.index('V_g') + 2])
-        except ValueError:
-            return np.nan
+    def get_filename(self) -> str:
+        '''
+        Returns the filename of the sxm.
+        '''
+        return self.header[':SCAN_FILE:'][0].split('\\').pop()
 
-    def get_sample_bias(self):
+    def get_scan_pixels(self) -> tuple[int, int]:
+        '''
+        Returns the number of x pixels and number of y pixels
+        '''
+        return (self.header['x_pixels'], self.header['y_pixels'])
+
+    def get_gate_voltage(self) -> float:
+        '''
+        Returns the gate voltage in V.
+        '''
+        try:
+            return float(self.header[':Ext. VI 1>Gate voltage (V):'][0])
+        except:
+            try:
+                split_comment = self.header[':COMMENT:'][0].split()
+                return float(split_comment[split_comment.index('V_g') + 2])
+            except ValueError:
+                return 0.0
+
+    def get_sample_bias(self) -> float:
         '''
         Returns the sample bias in V.
         '''
@@ -74,8 +151,27 @@ class sxm():
         '''
         return float(self.header[':Z-CONTROLLER:'][1].split('\t')[4].split()[0])*1e12
 
-    def get_proportional_gain(self):
+    def get_proportional_gain(self) -> float:
         return self.get_proportional()
+
+    def get_time_per_line(self) -> tuple[float, float]:
+        '''
+        Returns
+        -------
+        forward_time, backward_time : float
+            Time per line for forward and backward passes
+        '''
+        scan_time = self.header[':SCAN_TIME:'][0].split()
+        return (float(scan_time[0]), float(scan_time[1]))
+
+    def get_onenote_info_string(self) -> str:
+        '''
+        Returns
+        -------
+        info_string : str
+            The info string containing info of the image. Paste it into your notes!
+        '''
+        return f"{self.get_filename()}\n\nPixels = {self.get_scan_pixels()}\nVg = {self.get_gate_voltage()} V\nVs = {round(self.get_sample_bias() * 1000, 2)} mV\nI = {self.get_setpoint_current()} pA\nProportional = {self.get_proportional()} pm\nTime per line = {self.get_time_per_line()} s"
 
     def get_data(self, channel : str, direction : int = 0) -> np.ndarray:
 
@@ -266,65 +362,6 @@ class sxm():
             for idx in directions:
                 interp_image = griddata(old_points, self.data[channel][idx].ravel(), new_points)
                 self.data[channel][idx] = interp_image.reshape((X_new.shape))
-
-def sxm_header(filename, extra_info = None):
-    '''
-    Returns the header of an sxm file as a dict
-    '''
-    if extra_info is None:
-        extra_info = [None, None]
-
-    if not filename.endswith('.sxm'):
-        return {}
-    header = {}
-
-    with open(filename,'rb') as f:
-        file = f.read()
-    extra_info[0] = file
-
-    header_text = ''
-    idx = 0
-    while True:
-        try:
-            header_text += chr(file[idx]) # Python 3
-        except TypeError:
-            header_text += file[idx] # Python 2
-        idx += 1
-        if ':SCANIT_END:' in header_text:
-            break
-    header_text = header_text.split('\n')
-    for header_line in header_text:
-        if ':' in header_line:
-            prev_header = header_line
-            header[header_line] = []
-        else:
-            header[prev_header].append(header_line)
-    temp = header[':SCAN_PIXELS:'][0].strip().split()
-    header['x_pixels'] = int(temp[0])
-    header['y_pixels'] = int(temp[1])
-    temp = header[':SCAN_RANGE:'][0].strip().split()
-    header['x_range (nm)'] = float(temp[0])*1e9
-    header['y_range (nm)'] = float(temp[1])*1e9
-    temp = header[':SCAN_OFFSET:'][0].strip().split()
-    header['x_center (nm)'] = float(temp[0])*1e9
-    header['y_center (nm)'] = float(temp[1])*1e9
-    temp =header[':SCAN_ANGLE:'][0].strip().split()
-    header['angle'] = float(temp[0]) #Clockwise
-    header['direction'] = header[':SCAN_DIR:'][0]
-    temp = [chnls.split('\t') for chnls  in header[':DATA_INFO:'][1:-1]] # Will this handle multipass?
-    header['channels'] = [chnls[2].replace('_', ' ') + ' (' + chnls[3] + ')' for chnls in temp]
-
-    try:
-        multipass_header = header[':Multipass-Config:'][0]
-        multipass_rows = header[':Multipass-Config:'][1:]
-        header['multipass biases'] = []
-        for row in multipass_rows:
-            header['multipass biases'].append(float(row.split('\t')[6]))
-    except (KeyError, IndexError):
-        pass
-        
-    extra_info[1] = idx
-    return header
 
 def scale(data: np.ndarray, multiply_factor: float) -> np.ndarray:
     '''

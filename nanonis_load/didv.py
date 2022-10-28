@@ -27,7 +27,7 @@ import time
 import sys
 import os
 import ast
-from tkinter import Tk
+from .util import copy_text_to_clipboard
 
 import glob
 import re
@@ -1203,7 +1203,7 @@ class colorplot(interactive_colorplot.colorplot):
                 
                 fig, ax = plt.subplots(1, 2)
                 
-                copy_text_to_clipboard(f"{self.img_data_points['filename'][index]}\n\nVg = {round(self.img_data_points['V_g'][index], 2)} V\nVs = {round(self.img_data_points['V_s'][index]*1000, 2)} mV\nI = {image_sxm.get_setpoint_current()} pA\nProportional = {image_sxm.get_proportional()} pm")
+                copy_text_to_clipboard(image_sxm.get_onenote_info_string())
 
                 ax[0].imshow(data,
                             cmap=cmap,
@@ -2220,11 +2220,3 @@ def quick_landau_fan(filename, bias = 0, cmap = None, center = False, width = No
     fan = landau_fan(filename, cache = cache , fast = fast)
     fan.plot(bias, cmap = cmap, center = center, width = width, rasterized = rasterized, normalize = normalize)
     return fan
-
-def copy_text_to_clipboard(text : str):
-    r = Tk()
-    r.withdraw()
-    r.clipboard_clear()
-    r.clipboard_append(text)
-    r.update()
-    r.destroy()
