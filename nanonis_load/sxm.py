@@ -89,6 +89,7 @@ class sxm():
 
     def __init__(self, filename : str):
 
+        self.filename = filename
         self.data = {}
         extra_info = [None, None]
         self.header = sxm_header(filename, extra_info = extra_info)
@@ -112,7 +113,7 @@ class sxm():
         '''
         Returns the filename of the sxm.
         '''
-        return self.header[':SCAN_FILE:'][0].split('\\').pop()
+        return self.filename
 
     def get_scan_pixels(self) -> tuple[int, int]:
         '''
