@@ -556,6 +556,17 @@ class colorplot(interactive_colorplot.colorplot):
         b_file = os.path.join(path_to_this_file, 'cmaps/w_b.csv')
         self.sxm_cmap = get_cmap_from_digitalizer_file(r_file, g_file, b_file)
 
+    def get_header(self) -> dict:
+        '''
+        Returns the header of the first spectrum without the gate entry.
+        '''
+        header = self.spectra_list[0].header
+        try:
+            header.pop('Gate (V)')
+        except:
+            pass
+        return header
+
     @property
     def gate(self):
         return self.ylist
@@ -1163,6 +1174,73 @@ class colorplot(interactive_colorplot.colorplot):
         self.marker_annot.get_bbox_patch().set_facecolor((0, 1, 0, 1))
         self.marker_annot.get_bbox_patch().set_alpha(0.6)
 
+    def get_onenote_info_string(self) -> str:
+        '''
+        Returns an info string to paste into your notes
+        '''
+        filename = self.arg_list[0]
+        
+        header = self.get_header()
+
+        gate_range = f"{(round(np.amin(self.ylist), 2), round(np.amax(self.ylist)), 2)} V"
+        gate_increment = f"{round(np.abs(self.ylist[1] - self.ylist[0]), 2)} V"
+
+        bias_range_float = (np.amin(self.xlist), np.amax(self.xlist))
+        if np.abs(bias_range_float[0]) < 1 or np.abs(bias_range_float[1]) < 1:
+            bias_range = f"{(round(bias_range_float[0]*1000, 2), round(bias_range_float[1]*1000, 2))} mV"
+        else:
+            bias_range = f"{(round(bias_range_float[0], 2), round(bias_range_float[1], 2))} V"
+
+        try:
+            setpoint_bias_float = float(header['Bias (V)'])
+            if np.abs(setpoint_bias_float) < 1:
+                setpoint_bias = f"{round(setpoint_bias_float * 1000, 2)} mV"
+            else:
+                setpoint_bias = f"{round(setpoint_bias_float, 2)} V"
+        except:
+            setpoint_bias = "Not recorded"
+        try:
+            setpoint_current_float = float(header['Setpoint current (pA)'])
+            if np.abs(setpoint_current_float) < 1e3:
+                setpoint_current = f"{round(setpoint_current_float, 2)} pA"
+            elif 1e3 < np.abs(setpoint_current_float) < 1e6:
+                setpoint_current = f"{round(setpoint_current_float / 1e3, 2)} nA"
+            else:
+                setpoint_current = f"{round(setpoint_current_float / 1e6, 2)} uA"
+        except:
+            setpoint_current = "Not recorded"
+        try:
+            lockin_amplitude_float = float(header['Lockin Amplitude'])
+            bias_calibration_factor = float(header['Bias Calibration Factor'])
+            if 0.3 < bias_calibration_factor < 0.7:
+                lockin_amplitude = f"{lockin_amplitude_float / 100 * 1000} mV"
+            elif bias_calibration_factor < 0.3:
+                lockin_amplitude = f"{lockin_amplitude_float} mV"
+            else:
+                lockin_amplitude = "Weird bias calibration value?"
+        except:
+            lockin_amplitude = "Not recorded"
+        try:
+            lockin_frequency = f"{header['Lockin Frequency']} Hz"
+        except:
+            lockin_frequency = "Not recorded"
+        try:
+            lockin_sensitivity = header['Lockin Sensitivity']
+        except:
+            lockin_sensitivity = "Not recorded"
+        try: 
+            lockin_time_constant = header['Lockin Time Constant']
+        except:
+            lockin_time_constant = "Not recorded"
+        
+        return f"{filename}\n\nGate range = {gate_range}\nGate increment = {gate_increment}\nBias range = {bias_range}\nSetpoint bias = {setpoint_bias}\nCurrent = {setpoint_current}\nLockin amplitude = {lockin_amplitude}\nLockin frequency = {lockin_frequency}\nLockin sensitivity = {lockin_sensitivity}\nLockin time constant = {lockin_time_constant}"
+        
+    def copy_onenote_info_string(self):
+        '''
+        Copies the string returned by get_onenote_info_string() onto the clipboard.
+        '''
+        copy_text_to_clipboard(self.get_onenote_info_string())
+
     def on_hover(self, event):
         '''
         Handles mouse hover events over scatter plot points.
@@ -1257,7 +1335,7 @@ def batch_load(basename, file_range = None, attribute_list = None, cache = None,
                     continue
         return (spectrum_array, file_list)
 
-def parse_arguments(*spectra_arguments, **kwargs):
+def parse_arguments(*spectra_arguments, **kwargs) -> list[spectrum]:
 
     cache = kwargs['cache'] if ('cache' in kwargs) else None
     constraint = kwargs['constraint'] if ('constraint' in kwargs) else None
