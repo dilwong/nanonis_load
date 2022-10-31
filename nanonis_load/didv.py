@@ -1079,13 +1079,16 @@ class colorplot(interactive_colorplot.colorplot):
         else:
             raise NotImplementedError(r"Unknown plotting library.")
 
-    def bias_and_gate_in_range(self, sample_bias, gate_voltage):
+    def bias_and_gate_in_range(self, sample_bias, gate_voltage, tolerance=100):
+        '''
+        Returns True if sample_bias and gate_voltage are within the bounds of the gate sweep
+        '''
         gate_min = np.amin(self.ylist)
         gate_max = np.amax(self.ylist)
-        gate_tolerance = np.abs(gate_max - gate_min) / 100
+        gate_tolerance = np.abs(gate_max - gate_min) / tolerance
         bias_min = np.amin(self.xlist)
         bias_max = np.amax(self.xlist)
-        bias_tolerance = np.abs(bias_max - bias_min) / 100
+        bias_tolerance = np.abs(bias_max - bias_min) / tolerance
 
         return (sample_bias > bias_min - bias_tolerance) & (sample_bias < bias_max + bias_tolerance) & (gate_voltage > gate_min - gate_tolerance) & (gate_voltage < gate_max + gate_tolerance)
 
@@ -1110,16 +1113,14 @@ class colorplot(interactive_colorplot.colorplot):
             sample_biases = header['multipass biases']
             # Only add the marker if it's within the bounds of the spectrum
             for sample_bias in sample_biases:
-                if self.bias_and_gate_in_range(sample_bias, gate_voltage):
-                    self.img_data_points['filename'].append(filename)
-                    self.img_data_points['V_s'].append(sample_bias)
-                    self.img_data_points['V_g'].append(gate_voltage)
-        else:
-            sample_bias = float(header[':BIAS:'][0]) # If this throws an exception, then the header is probably fucked up
-            if self.bias_and_gate_in_range(sample_bias, gate_voltage):
                 self.img_data_points['filename'].append(filename)
                 self.img_data_points['V_s'].append(sample_bias)
                 self.img_data_points['V_g'].append(gate_voltage)
+        else:
+            sample_bias = float(header[':BIAS:'][0]) # If this throws an exception, then the header is probably fucked up
+            self.img_data_points['filename'].append(filename)
+            self.img_data_points['V_s'].append(sample_bias)
+            self.img_data_points['V_g'].append(gate_voltage)
 
     def add_img_data_marker_manual(self, filename, sample_bias, gate_voltage):
         '''
