@@ -1089,6 +1089,13 @@ class colorplot(interactive_colorplot.colorplot):
         '''
         header = sxm.sxm_header(filename)
 
+        gate_min = np.amin(self.ylist)
+        gate_max = np.amax(self.ylist)
+        gate_tolerance = np.abs(gate_max - gate_min) / 100
+        bias_min = np.amin(self.xlist)
+        bias_max = np.amax(self.xlist)
+        bias_tolerance = np.abs(bias_max - bias_min) / 100
+
         # Try getting gate voltage
         try:
             gate_voltage = float(header[':Ext. VI 1>Gate voltage (V):'][0])
@@ -1100,7 +1107,7 @@ class colorplot(interactive_colorplot.colorplot):
             sample_biases = header['multipass biases']
             # Only add the marker if it's within the bounds of the spectrum
             for sample_bias in sample_biases:
-                if (sample_bias > np.amin(self.xlist)) & (sample_bias < np.amax(self.xlist)) & (gate_voltage > np.amin(self.ylist)) & (gate_voltage < np.amax(self.ylist)):
+                if (sample_bias > bias_min - bias_tolerance) & (sample_bias < bias_max + bias_tolerance) & (gate_voltage > gate_min - gate_tolerance) & (gate_voltage < gate_max + gate_tolerance):
                     self.img_data_points['filename'].append(filename)
                     self.img_data_points['V_s'].append(sample_bias)
                     self.img_data_points['V_g'].append(gate_voltage)
