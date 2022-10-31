@@ -1103,17 +1103,19 @@ class colorplot(interactive_colorplot.colorplot):
             print("Warning: " + filename + " does not have the gate voltage stored in it")
             return
 
+        in_gate_range = (sample_bias > bias_min - bias_tolerance) & (sample_bias < bias_max + bias_tolerance) & (gate_voltage > gate_min - gate_tolerance) & (gate_voltage < gate_max + gate_tolerance)
+
         if 'multipass biases' in header.keys():
             sample_biases = header['multipass biases']
             # Only add the marker if it's within the bounds of the spectrum
             for sample_bias in sample_biases:
-                if (sample_bias > bias_min - bias_tolerance) & (sample_bias < bias_max + bias_tolerance) & (gate_voltage > gate_min - gate_tolerance) & (gate_voltage < gate_max + gate_tolerance):
+                if in_gate_range:
                     self.img_data_points['filename'].append(filename)
                     self.img_data_points['V_s'].append(sample_bias)
                     self.img_data_points['V_g'].append(gate_voltage)
         else:
             sample_bias = float(header[':BIAS:'][0]) # If this throws an exception, then the header is probably fucked up
-            if (sample_bias > np.amin(self.xlist)) & (sample_bias < np.amax(self.xlist)) & (gate_voltage > np.amin(self.ylist)) & (gate_voltage < np.amax(self.ylist)):
+            if in_gate_range:
                 self.img_data_points['filename'].append(filename)
                 self.img_data_points['V_s'].append(sample_bias)
                 self.img_data_points['V_g'].append(gate_voltage)
