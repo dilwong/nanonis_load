@@ -1152,6 +1152,7 @@ class colorplot(interactive_colorplot.colorplot):
                                 continue
                         self.add_img_data_marker(filename)
         self.plot_img_data_markers()
+        self.axes_reset()
 
     def auto_add_image_data_markers(self, *args, **kwargs):
         '''
