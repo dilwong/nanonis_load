@@ -1079,6 +1079,16 @@ class colorplot(interactive_colorplot.colorplot):
         else:
             raise NotImplementedError(r"Unknown plotting library.")
 
+    def bias_and_gate_in_range(self, sample_bias, gate_voltage):
+        gate_min = np.amin(self.ylist)
+        gate_max = np.amax(self.ylist)
+        gate_tolerance = np.abs(gate_max - gate_min) / 100
+        bias_min = np.amin(self.xlist)
+        bias_max = np.amax(self.xlist)
+        bias_tolerance = np.abs(bias_max - bias_min) / 100
+
+        return (sample_bias > bias_min - bias_tolerance) & (sample_bias < bias_max + bias_tolerance) & (gate_voltage > gate_min - gate_tolerance) & (gate_voltage < gate_max + gate_tolerance)
+
     def add_img_data_marker(self, filename):
         '''
         Loads an sxm file "filename", grabs its sample bias and gate voltage, and adds 
@@ -1089,13 +1099,6 @@ class colorplot(interactive_colorplot.colorplot):
         '''
         header = sxm.sxm_header(filename)
 
-        gate_min = np.amin(self.ylist)
-        gate_max = np.amax(self.ylist)
-        gate_tolerance = np.abs(gate_max - gate_min) / 100
-        bias_min = np.amin(self.xlist)
-        bias_max = np.amax(self.xlist)
-        bias_tolerance = np.abs(bias_max - bias_min) / 100
-
         # Try getting gate voltage
         try:
             gate_voltage = float(header[':Ext. VI 1>Gate voltage (V):'][0])
@@ -1103,19 +1106,17 @@ class colorplot(interactive_colorplot.colorplot):
             print("Warning: " + filename + " does not have the gate voltage stored in it")
             return
 
-        in_gate_range = (sample_bias > bias_min - bias_tolerance) & (sample_bias < bias_max + bias_tolerance) & (gate_voltage > gate_min - gate_tolerance) & (gate_voltage < gate_max + gate_tolerance)
-
         if 'multipass biases' in header.keys():
             sample_biases = header['multipass biases']
             # Only add the marker if it's within the bounds of the spectrum
             for sample_bias in sample_biases:
-                if in_gate_range:
+                if self.bias_and_gate_in_range(sample_bias, gate_voltage):
                     self.img_data_points['filename'].append(filename)
                     self.img_data_points['V_s'].append(sample_bias)
                     self.img_data_points['V_g'].append(gate_voltage)
         else:
             sample_bias = float(header[':BIAS:'][0]) # If this throws an exception, then the header is probably fucked up
-            if in_gate_range:
+            if self.bias_and_gate_in_range(sample_bias, gate_voltage):
                 self.img_data_points['filename'].append(filename)
                 self.img_data_points['V_s'].append(sample_bias)
                 self.img_data_points['V_g'].append(gate_voltage)
