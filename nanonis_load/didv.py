@@ -546,8 +546,8 @@ class colorplot(interactive_colorplot.colorplot):
         plt.ion()
         self.fig.canvas.mpl_connect("motion_notify_event", self.on_hover)
         self.fig.canvas.mpl_connect("button_press_event", self.on_click)
-        self.real_cscale = 2.5
-        self.fft_cscale = 0.5
+        self.real_cscale = 3.5
+        self.fft_cscale = 4
         
         #Set default colormap
         path_to_this_file = os.path.dirname(__file__)
