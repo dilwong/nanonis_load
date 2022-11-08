@@ -1194,7 +1194,7 @@ class colorplot(interactive_colorplot.colorplot):
         
         header = self.get_header()
 
-        gate_range = f"{(round(np.amin(self.ylist), 2), round(np.amax(self.ylist)), 2)} V"
+        gate_range = f"{(round(np.amin(self.ylist), 2), round(np.amax(self.ylist), 2))} V"
         gate_increment = f"{round(np.abs(self.ylist[1] - self.ylist[0]), 2)} V"
 
         bias_range_float = (np.amin(self.xlist), np.amax(self.xlist))
