@@ -536,7 +536,7 @@ class colorplot(interactive_colorplot.colorplot):
             plt.style.use('default')
 
         # Image data markers
-        self.img_data_points = {'filename': [],'V_s': [], 'V_g': []} # Contains filename, V_s and V_g for images that were taken and will be drawn as markers on the plot
+        self.img_data_points = {} # Keys should be the tuple (V_s, V_g) and values should be filenames
         self.marker_annot = self.ax.annotate("", xy=(0,0), xytext=(20,20),textcoords="offset points",
                     bbox=dict(boxstyle="round", fc="w"),
                     arrowprops=dict(arrowstyle="->"),
@@ -1104,7 +1104,7 @@ class colorplot(interactive_colorplot.colorplot):
 
         # Try getting gate voltage
         try:
-            gate_voltage = float(header[':Ext. VI 1>Gate voltage (V):'][0])
+            gate_voltage = round(float(header[':Ext. VI 1>Gate voltage (V):'][0]), 2)
         except:
             print("Warning: " + filename + " does not have the gate voltage stored in it")
             return
@@ -1113,14 +1113,10 @@ class colorplot(interactive_colorplot.colorplot):
             sample_biases = header['multipass biases']
             # Only add the marker if it's within the bounds of the spectrum
             for sample_bias in sample_biases:
-                self.img_data_points['filename'].append(filename)
-                self.img_data_points['V_s'].append(sample_bias)
-                self.img_data_points['V_g'].append(gate_voltage)
+                self.img_data_points[(round(sample_bias, 5), gate_voltage)] = filename
         else:
             sample_bias = float(header[':BIAS:'][0]) # If this throws an exception, then the header is probably fucked up
-            self.img_data_points['filename'].append(filename)
-            self.img_data_points['V_s'].append(sample_bias)
-            self.img_data_points['V_g'].append(gate_voltage)
+            self.img_data_points[(round(sample_bias, 5), gate_voltage)] = filename
 
     def add_img_data_marker_manual(self, filename, sample_bias, gate_voltage):
         '''
@@ -1135,6 +1131,7 @@ class colorplot(interactive_colorplot.colorplot):
     #
     # Sometimes multiple images have the same (V_s, V_g) because the data was retaken
     # or because some images are incomplete. How should this be handled?
+    # Fixed using dicts
     def auto_add_img_data_markers(self, basename = None, start = 0, end = 99999, index_list = None):
         '''
         Automatically loops over all files in current working directory and adds image data markers using them.
@@ -1171,7 +1168,9 @@ class colorplot(interactive_colorplot.colorplot):
         '''
         Plots the image data markers.
         '''
-        self.img_data_scatter = self.ax.scatter(self.img_data_points['V_s'], self.img_data_points['V_g'], s=s, color=color, zorder=zorder, **kwargs)
+        sample_biases = [bias for bias, _ in self.img_data_points.keys()]
+        gate_voltages = [gate for _, gate in self.img_data_points.keys()]
+        self.img_data_scatter = self.ax.scatter(sample_biases, gate_voltages, s=s, color=color, zorder=zorder, **kwargs)
         self.ax.zorder = 100
 
     def plot_image_data_markers(self, *args, **kwargs):
@@ -1181,7 +1180,7 @@ class colorplot(interactive_colorplot.colorplot):
         index = ind["ind"][0]
         pos = self.img_data_scatter.get_offsets()[index]
         self.marker_annot.xy = pos
-        text = self.img_data_points["filename"][index] + '\nVs = ' + str(self.img_data_points["V_s"][index]) + ' V' + '\nVg = ' + str(self.img_data_points["V_g"][index]) + ' V'
+        text = self.img_data_points[list(self.img_data_points.keys())[index]] + '\nVs = ' + str(list(self.img_data_points.keys())[index][0]*1000) + ' mV' + '\nVg = ' + str(list(self.img_data_points.keys())[index][1]) + ' V'
         self.marker_annot.set_text(text)
         self.marker_annot.get_bbox_patch().set_facecolor((0, 1, 0, 1))
         self.marker_annot.get_bbox_patch().set_alpha(0.6)
@@ -1271,13 +1270,16 @@ class colorplot(interactive_colorplot.colorplot):
 
     def on_click(self, event):
         '''
-        Handles click events
+        Handles click events (namely the image data markers)
         '''
         if event.inaxes == self.ax:
             cont, ind = self.img_data_scatter.contains(event)
             if cont:
+                if sys.version_info[1] < 7:
+                    print("Error: Python version is below 3.7.")
+                    return
                 index = ind["ind"][0]
-                image_sxm = sxm.sxm(self.img_data_points['filename'][index])
+                image_sxm = sxm.sxm(self.img_data_points[list(self.img_data_points.keys())[index]])
                 x_range = image_sxm.header['x_range (nm)']
                 y_range = image_sxm.header['y_range (nm)']
                 x_pixels = image_sxm.header['x_pixels']
