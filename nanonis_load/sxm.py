@@ -5,6 +5,7 @@ Loads and plots Nanonis .sxm data.
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.signal
+from . import util
 
 from typing import Union, Tuple, Optional
 
@@ -187,6 +188,28 @@ class sxm():
             self.y_mask = ~(channel_data == 0.0).any(axis=1)
         else:
             self.y_mask = self.y_mask & (~(channel_data == 0.0).any(axis=1))
+
+    @property
+    def x_range(self):
+        return self.header['x_range (nm)']
+
+    @property
+    def y_range(self):
+        return self.header['y_range (nm)']
+
+    @property
+    def x_pixels(self):
+        return self.header['x_pixels']
+
+    @property
+    def y_pixels(self):
+        return self.header['y_pixels']
+
+    def subtract_plane(self, channel : str, direction : int=0) -> np.ndarray:
+        '''
+        Returns the specified channel and direction of the data with a plane subtracted.
+        '''
+        return subtract_plane(self.data[channel][direction])
 
     @staticmethod
     def process_data(data : np.ndarray, process : Union[str, Tuple]) -> np.ndarray:
@@ -688,7 +711,9 @@ class plot():
             'Input 2 (V)' or 'Input 2 [AVG] (V)' channel from the spectrum acquired at that location.
     '''
 
-    def __init__(self, sxm_data, channel, direction = 0, flatten = True, subtract_plane = False):
+    def __init__(self, sxm_data : sxm, channel : str, direction : int=0, 
+                flatten : bool=False, subtract_plane : bool=True,
+                cmap=util.get_w_cmap(), rasterized=True):
 
         self.data = sxm_data
 
@@ -699,33 +724,31 @@ class plot():
             image_data=scipy.signal.detrend(image_data)
 
         # Flip upside down if image was taken scanning down
-        if sxm_data.header['direction'] == 'down':
-            image_data=np.flipud(image_data)
+        # if sxm_data.header['direction'] == 'down':
+        #     image_data=np.flipud(image_data)
 
         # Flip left to right if backwards scan
         #
         # THIS PROBABLY SHOULD BE DELETED.
-        if direction:
-            image_data=np.fliplr(image_data)
+        # if direction:
+        #     image_data=np.fliplr(image_data)
 
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
-        x_range = sxm_data.header['x_range (nm)']
-        y_range = sxm_data.header['y_range (nm)']
-        x_pixels = sxm_data.header['x_pixels']
-        y_pixels = sxm_data.header['y_pixels']
-        y, x = np.mgrid[0:x_range:x_pixels*1j,0:y_range:y_pixels*1j]
+        x_range = sxm_data.x_range
+        y_range = sxm_data.y_range
+        x_pixels = sxm_data.x_pixels
+        y_pixels = sxm_data.y_pixels
+        y, x = np.mgrid[0:x_range:(x_pixels+1)*1j,0:y_range:(y_pixels+1)*1j]
         #x = x.T
         #y = y.T
         if subtract_plane == True:
-            from sklearn.linear_model import LinearRegression
-            reg = LinearRegression().fit(np.vstack((x.flatten(),y.flatten())).T, image_data.flatten())
-            # TO DO: Check for non-square images.  x_pixels and y_pixels may need to be reversed...
-            plane = np.reshape(reg.predict(np.vstack((x.flatten(),y.flatten())).T), (x_pixels, y_pixels))
-            image_data = image_data - plane
+            image_data = sxm_data.subtract_plane(channel, direction)
         # shading = 'auto' in the pcolormesh command forces pcolormesh to accept x, y with the same dimensions as image_data.T
-        self.pcolor = self.ax.pcolormesh(y, x, image_data.T, cmap = 'copper', shading = 'auto') # pcolormesh chops off last column and row here
-        self.fig.colorbar(self.pcolor, ax = self.ax)
+        self.im_plot = self.ax.imshow(image_data, origin='lower', extent=(0, sxm_data.x_range, 0, sxm_data.y_range), 
+                                        cmap=cmap, rasterized=rasterized) # pcolormesh chops off last column and row here
+        self.ax.set_aspect('equal')
+        self.fig.colorbar(self.im_plot, ax = self.ax)
         self.image_data = image_data
 
     def xlim(self, x_min, x_max):
@@ -735,10 +758,10 @@ class plot():
         self.ax.set_ylim(y_min, y_max)
 
     def clim(self, c_min, c_max):
-        self.pcolor.set_clim(c_min, c_max)
+        self.im_plot.set_clim(c_min, c_max)
 
     def colormap(self, cmap):
-        self.pcolor.set_cmap(cmap)
+        self.im_plot.set_cmap(cmap)
 
     def add_spectra(self, spectra, labels = None):
 
