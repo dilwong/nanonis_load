@@ -6,6 +6,7 @@ from tkinter import Tk
 import numpy as np
 import scipy.interpolate
 import matplotlib
+import os
 
 def copy_text_to_clipboard(text : str):
     r = Tk()
@@ -88,3 +89,13 @@ def get_cmap_from_digitalizer_file(red_file : str, green_file : str, blue_file :
     B = B_interp(X)
 
     return matplotlib.colors.ListedColormap(np.c_[R, G, B])
+
+def get_w_cmap():
+    '''
+    Returns the secret sauce cmap
+    '''
+    path_to_this_file = os.path.dirname(__file__)
+    r_file = os.path.join(path_to_this_file, 'cmaps/w_r.csv')
+    g_file = os.path.join(path_to_this_file, 'cmaps/w_g.csv')
+    b_file = os.path.join(path_to_this_file, 'cmaps/w_b.csv')
+    return get_cmap_from_digitalizer_file(r_file, g_file, b_file)
