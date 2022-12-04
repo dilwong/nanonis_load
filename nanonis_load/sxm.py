@@ -211,6 +211,12 @@ class sxm():
         '''
         return subtract_plane(self.data[channel][direction])
 
+    def subtract_linear_by_line(self, channel : str, direction : int=0) -> np.ndarray:
+        '''
+        Returns the specified channel and directin of the data with a linear fit by line subtracted.
+        '''
+        return subtract_linear_by_line(self.data[channel][direction])
+
     @staticmethod
     def process_data(data : np.ndarray, process : Union[str, Tuple]) -> np.ndarray:
 
