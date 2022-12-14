@@ -190,12 +190,20 @@ class sxm():
             self.y_mask = self.y_mask & (~(channel_data == 0.0).any(axis=1))
 
     @property
+    def gate(self):
+        return self.get_gate_voltage()
+
+    @property
     def x_range(self):
         return self.header['x_range (nm)']
 
     @property
     def y_range(self):
         return self.header['y_range (nm)']
+
+    @property
+    def xy_range(self):
+        return np.array([self.x_range, self.y_range])
 
     @property
     def x_pixels(self):
@@ -205,6 +213,102 @@ class sxm():
     def y_pixels(self):
         return self.header['y_pixels']
 
+    @property
+    def xy_pixels(self):
+        return np.array([self.x_pixels, self.y_pixels])
+
+    @property
+    def fft_x_bounds(self):
+        return -self.x_pixels / self.x_range / 2, self.x_pixels / self.x_range / 2
+    
+    @property
+    def fft_x_range(self):
+        return self.x_pixels / self.x_range
+
+    @property
+    def fft_y_bounds(self):
+        return -self.y_pixels / self.y_range / 2, self.y_pixels / self.y_range / 2
+
+    @property
+    def fft_y_range(self):
+        return self.y_pixels / self.y_range
+
+    @property
+    def fft_range(self):
+        return np.array([self.fft_x_range, self.fft_y_range])
+
+    @property
+    def fft_bottom_left_corner(self):
+        return np.array([self.fft_x_bounds[0], self.fft_y_bounds[0]])
+
+    def r_to_ij(self, r : np.ndarray, round=False) -> np.ndarray:
+        '''
+        Convert a real space vector to pixel coordinates. If round is true, the result will be rounded to the
+        nearest integer.
+        '''
+        
+        pixel_coords = r / self.xy_range * self.xy_pixels
+        if round:
+            pixel_coords = np.rint(pixel_coords)
+        return pixel_coords
+
+    def ij_to_r(self, ij : np.ndarray) -> np.ndarray:
+        '''
+        Convert pixel coordinates into a real space vector.
+        '''
+        return ij / self.xy_pixels * self.xy_range
+
+    def k_to_ij(self, k : np.ndarray, round=False, two_pi=False) -> np.ndarray:
+        '''
+        Convert a momentum space vector to pixel coordinates of the FFT.
+        
+        Parameters
+        ----------
+        k : ndarray
+            The momentum space vector to convert to FFT pixel coordinates.
+        round : bool, optional
+            Whether or not to round the final result. Default is False.
+        two_pi : bool, optional
+            Whether or not to divide the final result by 2*pi. Default is False.
+
+        Returns
+        -------
+        pixel_coords : ndarray
+            The pixel coordinates of k. 
+
+        '''        
+        pixel_coords = (k - self.fft_bottom_left_corner)/self.fft_range * self.xy_pixels
+
+        if two_pi:
+            pixel_coords /= 2*np.pi
+        if round:
+            pixel_coords = np.rint(pixel_coords)
+
+        return pixel_coords
+
+    def ij_to_k(self, ij : np.ndarray, two_pi=False) -> np.ndarray:
+        '''
+        Convert pixel coordinates to a momentum space vector
+        
+        Parameters
+        ----------
+        pixel_coords : ndarray
+            Pixel coordinates of a point in the FFT
+        two_pi : bool, optional
+            Whether or not to multiply the final result by 2*pi. Default is False.
+
+        Returns
+        -------
+        k : ndarray
+            The momentum space vector corresponding to ij. 
+        '''
+        k = ij / self.xy_pixels * self.fft_range + self.fft_bottom_left_corner
+        
+        if two_pi:
+            k *= 2*np.pi
+
+        return k
+
     def subtract_plane(self, channel : str, direction : int=0) -> np.ndarray:
         '''
         Returns the specified channel and direction of the data with a plane subtracted.
@@ -213,7 +317,7 @@ class sxm():
 
     def subtract_linear_by_line(self, channel : str, direction : int=0) -> np.ndarray:
         '''
-        Returns the specified channel and directin of the data with a linear fit by line subtracted.
+        Returns the specified channel and direction of the data with a linear fit by line subtracted.
         '''
         return subtract_linear_by_line(self.data[channel][direction])
 

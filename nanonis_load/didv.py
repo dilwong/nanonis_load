@@ -22,6 +22,7 @@ p.drag_bar(direction = 'v' or 'h', locator = False).
 """
 
 import numpy as np
+import scipy.integrate
 import pandas as pd
 import time
 import sys
@@ -91,6 +92,69 @@ class spectrum():
 
         self.data = pd.read_csv(filename, sep = '\t', header = header_lines, skip_blank_lines = False)
 
+    @property
+    def zero_bias_index(self):
+        '''
+        Returns the index of smallest bias magnitude.
+        '''
+        return np.argmin(np.abs(self.data['Bias calc (V)']))
+
+    def get_integrated_data(self, channel, scale_factor : float=1.0) -> pd.DataFrame:
+        '''
+        Returns a channel of the data integrated from zero bias. I wouldn't use this if your spectrum doesn't
+        cross zero bias. I'll probably add that later on when I feel less lazy :^)
+
+        Parameters
+        ----------
+        channel : string
+            The channel to integrate
+        scale_factor : float, optional
+            Scale factor applied to the data after integration. Default is 1.
+
+        Returns
+        -------
+        data : pd.DataFrame
+            A pandas DataFrame with 'Bias calc (V)' as the first column and 'Integrated {channel}' as the second column.
+        '''
+        integrated_data = np.empty(len(self.data))
+        i0 = self.zero_bias_index
+        for i in range(i0):
+            integrated_data[i] = -scipy.integrate.trapezoid(self.data[channel][i:i0], self.data['Bias calc (V)'][i:i0])
+        for i in range(i0, len(self.data)):
+            integrated_data[i] = scipy.integrate.trapezoid(self.data[channel][i0:i], self.data['Bias calc (V)'][i0:i])
+        data = pd.DataFrame({'Bias calc (V)' : self.data['Bias calc (V)'], f'Integrated {channel}' : integrated_data*scale_factor})
+        return data
+
+    def get_lockin_calibration_factor(self, lockin_channel : str='Input 2 (V)', method : str='derivative') -> float:
+        '''
+        Gets the conversion factor from lockin output to conductance. Has units of siemens/volt.
+        Least squares is used to find the best fit scale factor.
+
+        Parameters
+        ----------
+        lockin_channel : str, optional
+            The name of the lockin channel. Default is 'Input 2 (V)'.
+        method : str, optional
+            The method to find the calibration factor with. If 'derivative', the derivative of the current will be
+            used for least squares. If 'integral' or 'integrate', the integral of the lockin signal will be used for
+            least squares. Default is 'derivative'.
+
+        Returns
+        -------
+        calibration_factor : float
+            The calibration factor in siemens/volt.
+        '''
+        if method == 'derivative':
+            return np.linalg.lstsq(self.data[lockin_channel].to_numpy()[:,np.newaxis], np.gradient(self.data['Current (A)'], self.data['Bias calc (V)']), rcond=None)[0]
+        elif method == 'integral' or method == 'integrate':
+            return np.linalg.lstsq(self.get_integrated_data(channel=lockin_channel)[f'Integrated {lockin_channel}'].to_numpy()[:,np.newaxis], self.data['Current (A)'], rcond=None)[0]
+
+    def get_bias_offset(self):
+        '''
+        Returns the bias offset by finding the point with minimum current magnitude.
+        '''
+        return self.data['Bias calc (V)'][np.argmin(np.abs(self.data['Current (A)']))]
+
     def _fix_header(self):
         if 'X (m)' in self.header:
             self.header['x (nm)'] = float(self.header['X (m)'])*1e9
@@ -120,7 +184,7 @@ class spectrum():
         else:
             self.data[channel].to_clipboard(header = True)
 
-    def plot(self, channel = 'Input 2 (V)', label = 'gate', multiply = 1, add = 0, plot_on_previous = False, **kwargs):
+    def plot(self, channel = 'Input 2 (V)', label = 'gate', multiply = 1, add = 0, plot_on_previous = False, ax=None, **kwargs):
         
         '''
         Plots 'Bias calc (V)' against the data in the column named channel.
@@ -138,6 +202,8 @@ class spectrum():
         Returns:
             matplotlib.axes._subplots.AxesSubplot
         '''
+        if ax is None:
+            ax = plt.gca()
 
         if label == 'gate':
             try:
@@ -152,8 +218,70 @@ class spectrum():
         if add != 0:
             dat[channel] = dat[channel] + add
         if plot_on_previous:
-            return dat.plot(x = 'Bias calc (V)', y = channel, label = legend_label, ax = plt.gca(), **kwargs)
+            return dat.plot(x = 'Bias calc (V)', y = channel, label = legend_label, ax = ax, **kwargs)
         return dat.plot(x = 'Bias calc (V)', y = channel, label = legend_label, **kwargs)
+
+    def get_gap_bounds(self, mode : str='fwhm', channel : str='Input 2 (V)', prominence=0.001,
+                                blur_width=0, second_derivative_threshold=0.001, 
+                                min_search_window=(-0.01, 0.01), max_search_window=(-0.01, 0.01), 
+                                correct_zero_bias=True, verbose=False):
+        '''
+        Documentation
+        '''
+        import scipy.signal
+        import scipy.ndimage
+        import scipy.interpolate
+
+        x = self.data['Bias calc (V)']
+        if blur_width == 0:
+            y = self.data[channel].to_numpy()
+        else:
+            y = scipy.ndimage.gaussian_filter1d(self.data[channel], blur_width)
+
+        zero_bias_index = np.argmin(np.abs(self.data['Bias calc (V)']))
+        if np.gradient(np.gradient(y))[zero_bias_index] < second_derivative_threshold:
+            return np.array([0, 0])
+
+        if mode == 'fwhm' or mode == 'full width half max':
+            max = np.amax(y[(x > max_search_window[0]) & (x < max_search_window[1])])
+            min = np.amin(y[(x > min_search_window[0]) & (x < min_search_window[1])])
+            interp = scipy.interpolate.UnivariateSpline(x, y - (max + min)/2, s=0)
+            roots = interp.roots()
+            if correct_zero_bias:
+                roots -= x[np.argmin(np.abs(self.data['Current (A)']))]
+            positive_roots = roots[roots >= 0]
+            negative_roots = roots[roots < 0]
+            if len(positive_roots) == 0 or len(negative_roots) == 0:
+                return 0, 0
+            return negative_roots[np.argmin(np.abs(negative_roots))], np.amin(positive_roots)
+        elif mode == 'derivative':
+            peaks, peak_properties = scipy.signal.find_peaks(np.gradient(y), prominence=prominence)
+            dips, dip_properties = scipy.signal.find_peaks(-np.gradient(y), prominence=prominence)
+            if verbose:
+                print(f"peak_properties = {peak_properties}")
+                print(f"dip_properties = {dip_properties}")
+            if len(peaks) == 0 or len(dips) == 0:
+                return np.array([0, 0])
+            # Take the largest peak and dip
+            return x[sorted([dips[np.argmax(dip_properties['prominences'])], peaks[np.argmax(peak_properties['prominences'])]])]
+        elif mode == 'peaks' or mode == 'peak':
+            peaks, properties = scipy.signal.find_peaks(y, prominence=prominence)
+            sorted_indices = np.argsort(properties['prominences'])
+            if verbose:
+                print(f"properties = {properties}")
+            if len(peaks) == 0:
+                return np.array([0, 0])
+            return x[sorted([peaks[sorted_indices[-2]], peaks[sorted_indices[-1]]])] # Indices of the two biggest peaks
+
+
+    def get_gap_size(self, mode : str='derivative', channel : str='Input 2 (V)', prominence=0.001, blur_width=0, 
+                        second_derivative_threshold=0.001, 
+                        min_search_window=(-0.01, 0.01), max_search_window=(-0.01, 0.01), verbose=False) -> float:
+        bounds = self.get_gap_bounds(mode=mode, channel=channel, prominence=prominence, 
+                                            blur_width=blur_width, verbose=verbose, 
+                                            second_derivative_threshold=second_derivative_threshold, 
+                                            min_search_window=min_search_window, max_search_window=max_search_window)
+        return np.abs(bounds[0] - bounds[1])
 
 # Plot a spectrum
 class plot():
@@ -566,6 +694,31 @@ class colorplot(interactive_colorplot.colorplot):
         except:
             pass
         return header
+
+    def get_spectra_gate_range(self, start_gate : float, end_gate : float) -> list[spectrum]:
+        spectra = []
+        for spectrum in self.spectra_list:
+            if start_gate <= spectrum.gate <= end_gate:
+                spectra.append(spectrum)
+        
+        return spectra
+
+    def get_gap_size(self, start_gate : float=None, end_gate : float=None, 
+                channel='Input 2 (V)', mode='derivative', prominence=0.001, blur_width=0, 
+                second_derivative_threshold=0.001, 
+                min_search_window=(-0.01, 0.01), max_search_window=(-0.01, 0.01), verbose=False) -> tuple[list[float], list[float]]:
+        spectra = self.get_spectra_gate_range(start_gate, end_gate)
+        gates = [spectrum.gate for spectrum in spectra]
+        gap_sizes = [spectrum.get_gap_size(mode=mode, channel=channel, 
+                                            prominence=prominence, blur_width=blur_width, 
+                                            second_derivative_threshold=second_derivative_threshold, 
+                                            min_search_window=min_search_window, max_search_window=max_search_window, 
+                                            verbose=verbose) for spectrum in spectra]
+        return gates, gap_sizes
+
+    def get_spectrum_from_gate(self, gate : float) -> spectrum:
+        closest_index = np.argmin(np.abs(self.gate - gate))
+        return self.spectra_list[closest_index]
 
     @property
     def gate(self):
