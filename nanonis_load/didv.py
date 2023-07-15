@@ -22,6 +22,7 @@ p.drag_bar(direction = 'v' or 'h', locator = False).
 """
 
 import numpy as np
+import scipy.integrate
 import pandas as pd
 import time
 import sys
@@ -91,6 +92,69 @@ class spectrum():
 
         self.data = pd.read_csv(filename, sep = '\t', header = header_lines, skip_blank_lines = False)
 
+    @property
+    def zero_bias_index(self):
+        '''
+        Returns the index of smallest bias magnitude.
+        '''
+        return np.argmin(np.abs(self.data['Bias calc (V)']))
+
+    def get_integrated_data(self, channel, scale_factor : float=1.0) -> pd.DataFrame:
+        '''
+        Returns a channel of the data integrated from zero bias. I wouldn't use this if your spectrum doesn't
+        cross zero bias. I'll probably add that later on when I feel less lazy :^)
+
+        Parameters
+        ----------
+        channel : string
+            The channel to integrate
+        scale_factor : float, optional
+            Scale factor applied to the data after integration. Default is 1.
+
+        Returns
+        -------
+        data : pd.DataFrame
+            A pandas DataFrame with 'Bias calc (V)' as the first column and 'Integrated {channel}' as the second column.
+        '''
+        integrated_data = np.empty(len(self.data))
+        i0 = self.zero_bias_index
+        for i in range(i0):
+            integrated_data[i] = -scipy.integrate.trapezoid(self.data[channel][i:i0], self.data['Bias calc (V)'][i:i0])
+        for i in range(i0, len(self.data)):
+            integrated_data[i] = scipy.integrate.trapezoid(self.data[channel][i0:i], self.data['Bias calc (V)'][i0:i])
+        data = pd.DataFrame({'Bias calc (V)' : self.data['Bias calc (V)'], f'Integrated {channel}' : integrated_data*scale_factor})
+        return data
+
+    def get_lockin_calibration_factor(self, lockin_channel : str='Input 2 (V)', method : str='derivative') -> float:
+        '''
+        Gets the conversion factor from lockin output to conductance. Has units of siemens/volt.
+        Least squares is used to find the best fit scale factor.
+
+        Parameters
+        ----------
+        lockin_channel : str, optional
+            The name of the lockin channel. Default is 'Input 2 (V)'.
+        method : str, optional
+            The method to find the calibration factor with. If 'derivative', the derivative of the current will be
+            used for least squares. If 'integral' or 'integrate', the integral of the lockin signal will be used for
+            least squares. Default is 'derivative'.
+
+        Returns
+        -------
+        calibration_factor : float
+            The calibration factor in siemens/volt.
+        '''
+        if method == 'derivative':
+            return np.linalg.lstsq(self.data[lockin_channel].to_numpy()[:,np.newaxis], np.gradient(self.data['Current (A)'], self.data['Bias calc (V)']), rcond=None)[0]
+        elif method == 'integral' or method == 'integrate':
+            return np.linalg.lstsq(self.get_integrated_data(channel=lockin_channel)[f'Integrated {lockin_channel}'].to_numpy()[:,np.newaxis], self.data['Current (A)'], rcond=None)[0]
+
+    def get_bias_offset(self):
+        '''
+        Returns the bias offset by finding the point with minimum current magnitude.
+        '''
+        return self.data['Bias calc (V)'][np.argmin(np.abs(self.data['Current (A)']))]
+
     def _fix_header(self):
         if 'X (m)' in self.header:
             self.header['x (nm)'] = float(self.header['X (m)'])*1e9
@@ -120,7 +184,7 @@ class spectrum():
         else:
             self.data[channel].to_clipboard(header = True)
 
-    def plot(self, channel = 'Input 2 (V)', label = 'gate', multiply = 1, add = 0, plot_on_previous = False, **kwargs):
+    def plot(self, channel = 'Input 2 (V)', label = 'gate', multiply = 1, add = 0, plot_on_previous = False, ax=None, **kwargs):
         
         '''
         Plots 'Bias calc (V)' against the data in the column named channel.
@@ -138,6 +202,8 @@ class spectrum():
         Returns:
             matplotlib.axes._subplots.AxesSubplot
         '''
+        if ax is None:
+            ax = plt.gca()
 
         if label == 'gate':
             try:
@@ -152,8 +218,70 @@ class spectrum():
         if add != 0:
             dat[channel] = dat[channel] + add
         if plot_on_previous:
-            return dat.plot(x = 'Bias calc (V)', y = channel, label = legend_label, ax = plt.gca(), **kwargs)
+            return dat.plot(x = 'Bias calc (V)', y = channel, label = legend_label, ax = ax, **kwargs)
         return dat.plot(x = 'Bias calc (V)', y = channel, label = legend_label, **kwargs)
+
+    def get_gap_bounds(self, mode : str='fwhm', channel : str='Input 2 (V)', prominence=0.001,
+                                blur_width=0, second_derivative_threshold=0.001, 
+                                min_search_window=(-0.01, 0.01), max_search_window=(-0.01, 0.01), 
+                                correct_zero_bias=True, verbose=False):
+        '''
+        Documentation
+        '''
+        import scipy.signal
+        import scipy.ndimage
+        import scipy.interpolate
+
+        x = self.data['Bias calc (V)']
+        if blur_width == 0:
+            y = self.data[channel].to_numpy()
+        else:
+            y = scipy.ndimage.gaussian_filter1d(self.data[channel], blur_width)
+
+        zero_bias_index = np.argmin(np.abs(self.data['Bias calc (V)']))
+        if np.gradient(np.gradient(y))[zero_bias_index] < second_derivative_threshold:
+            return np.array([0, 0])
+
+        if mode == 'fwhm' or mode == 'full width half max':
+            max = np.amax(y[(x > max_search_window[0]) & (x < max_search_window[1])])
+            min = np.amin(y[(x > min_search_window[0]) & (x < min_search_window[1])])
+            interp = scipy.interpolate.UnivariateSpline(x, y - (max + min)/2, s=0)
+            roots = interp.roots()
+            if correct_zero_bias:
+                roots -= x[np.argmin(np.abs(self.data['Current (A)']))]
+            positive_roots = roots[roots >= 0]
+            negative_roots = roots[roots < 0]
+            if len(positive_roots) == 0 or len(negative_roots) == 0:
+                return 0, 0
+            return negative_roots[np.argmin(np.abs(negative_roots))], np.amin(positive_roots)
+        elif mode == 'derivative':
+            peaks, peak_properties = scipy.signal.find_peaks(np.gradient(y), prominence=prominence)
+            dips, dip_properties = scipy.signal.find_peaks(-np.gradient(y), prominence=prominence)
+            if verbose:
+                print(f"peak_properties = {peak_properties}")
+                print(f"dip_properties = {dip_properties}")
+            if len(peaks) == 0 or len(dips) == 0:
+                return np.array([0, 0])
+            # Take the largest peak and dip
+            return x[sorted([dips[np.argmax(dip_properties['prominences'])], peaks[np.argmax(peak_properties['prominences'])]])]
+        elif mode == 'peaks' or mode == 'peak':
+            peaks, properties = scipy.signal.find_peaks(y, prominence=prominence)
+            sorted_indices = np.argsort(properties['prominences'])
+            if verbose:
+                print(f"properties = {properties}")
+            if len(peaks) == 0:
+                return np.array([0, 0])
+            return x[sorted([peaks[sorted_indices[-2]], peaks[sorted_indices[-1]]])] # Indices of the two biggest peaks
+
+
+    def get_gap_size(self, mode : str='derivative', channel : str='Input 2 (V)', prominence=0.001, blur_width=0, 
+                        second_derivative_threshold=0.001, 
+                        min_search_window=(-0.01, 0.01), max_search_window=(-0.01, 0.01), verbose=False) -> float:
+        bounds = self.get_gap_bounds(mode=mode, channel=channel, prominence=prominence, 
+                                            blur_width=blur_width, verbose=verbose, 
+                                            second_derivative_threshold=second_derivative_threshold, 
+                                            min_search_window=min_search_window, max_search_window=max_search_window)
+        return np.abs(bounds[0] - bounds[1])
 
 # Plot a spectrum
 class plot():
@@ -536,7 +664,7 @@ class colorplot(interactive_colorplot.colorplot):
             plt.style.use('default')
 
         # Image data markers
-        self.img_data_points = {'filename': [],'V_s': [], 'V_g': []} # Contains filename, V_s and V_g for images that were taken and will be drawn as markers on the plot
+        self.img_data_points = {} # Keys should be the tuple (V_s, V_g) and values should be filenames
         self.marker_annot = self.ax.annotate("", xy=(0,0), xytext=(20,20),textcoords="offset points",
                     bbox=dict(boxstyle="round", fc="w"),
                     arrowprops=dict(arrowstyle="->"),
@@ -566,6 +694,31 @@ class colorplot(interactive_colorplot.colorplot):
         except:
             pass
         return header
+
+    def get_spectra_gate_range(self, start_gate : float, end_gate : float) -> list[spectrum]:
+        spectra = []
+        for spectrum in self.spectra_list:
+            if start_gate <= spectrum.gate <= end_gate:
+                spectra.append(spectrum)
+        
+        return spectra
+
+    def get_gap_size(self, start_gate : float=None, end_gate : float=None, 
+                channel='Input 2 (V)', mode='derivative', prominence=0.001, blur_width=0, 
+                second_derivative_threshold=0.001, 
+                min_search_window=(-0.01, 0.01), max_search_window=(-0.01, 0.01), verbose=False) -> tuple[list[float], list[float]]:
+        spectra = self.get_spectra_gate_range(start_gate, end_gate)
+        gates = [spectrum.gate for spectrum in spectra]
+        gap_sizes = [spectrum.get_gap_size(mode=mode, channel=channel, 
+                                            prominence=prominence, blur_width=blur_width, 
+                                            second_derivative_threshold=second_derivative_threshold, 
+                                            min_search_window=min_search_window, max_search_window=max_search_window, 
+                                            verbose=verbose) for spectrum in spectra]
+        return gates, gap_sizes
+
+    def get_spectrum_from_gate(self, gate : float) -> spectrum:
+        closest_index = np.argmin(np.abs(self.gate - gate))
+        return self.spectra_list[closest_index]
 
     @property
     def gate(self):
@@ -1104,7 +1257,7 @@ class colorplot(interactive_colorplot.colorplot):
 
         # Try getting gate voltage
         try:
-            gate_voltage = float(header[':Ext. VI 1>Gate voltage (V):'][0])
+            gate_voltage = round(float(header[':Ext. VI 1>Gate voltage (V):'][0]), 2)
         except:
             print("Warning: " + filename + " does not have the gate voltage stored in it")
             return
@@ -1113,14 +1266,10 @@ class colorplot(interactive_colorplot.colorplot):
             sample_biases = header['multipass_biases']
             # Only add the marker if it's within the bounds of the spectrum
             for sample_bias in sample_biases:
-                self.img_data_points['filename'].append(filename)
-                self.img_data_points['V_s'].append(sample_bias)
-                self.img_data_points['V_g'].append(gate_voltage)
+                self.img_data_points[(round(sample_bias, 5), gate_voltage)] = filename
         else:
             sample_bias = float(header[':BIAS:'][0]) # If this throws an exception, then the header is probably fucked up
-            self.img_data_points['filename'].append(filename)
-            self.img_data_points['V_s'].append(sample_bias)
-            self.img_data_points['V_g'].append(gate_voltage)
+            self.img_data_points[(round(sample_bias, 5), gate_voltage)] = filename
 
     def add_img_data_marker_manual(self, filename, sample_bias, gate_voltage):
         '''
@@ -1135,6 +1284,7 @@ class colorplot(interactive_colorplot.colorplot):
     #
     # Sometimes multiple images have the same (V_s, V_g) because the data was retaken
     # or because some images are incomplete. How should this be handled?
+    # Fixed using dicts
     def auto_add_img_data_markers(self, basename = None, start = 0, end = 99999, index_list = None):
         '''
         Automatically loops over all files in current working directory and adds image data markers using them.
@@ -1171,7 +1321,9 @@ class colorplot(interactive_colorplot.colorplot):
         '''
         Plots the image data markers.
         '''
-        self.img_data_scatter = self.ax.scatter(self.img_data_points['V_s'], self.img_data_points['V_g'], s=s, color=color, zorder=zorder, **kwargs)
+        sample_biases = [bias for bias, _ in self.img_data_points.keys()]
+        gate_voltages = [gate for _, gate in self.img_data_points.keys()]
+        self.img_data_scatter = self.ax.scatter(sample_biases, gate_voltages, s=s, color=color, zorder=zorder, **kwargs)
         self.ax.zorder = 100
 
     def plot_image_data_markers(self, *args, **kwargs):
@@ -1181,7 +1333,7 @@ class colorplot(interactive_colorplot.colorplot):
         index = ind["ind"][0]
         pos = self.img_data_scatter.get_offsets()[index]
         self.marker_annot.xy = pos
-        text = self.img_data_points["filename"][index] + '\nVs = ' + str(self.img_data_points["V_s"][index]) + ' V' + '\nVg = ' + str(self.img_data_points["V_g"][index]) + ' V'
+        text = self.img_data_points[list(self.img_data_points.keys())[index]] + '\nVs = ' + str(list(self.img_data_points.keys())[index][0]*1000) + ' mV' + '\nVg = ' + str(list(self.img_data_points.keys())[index][1]) + ' V'
         self.marker_annot.set_text(text)
         self.marker_annot.get_bbox_patch().set_facecolor((0, 1, 0, 1))
         self.marker_annot.get_bbox_patch().set_alpha(0.6)
@@ -1271,13 +1423,16 @@ class colorplot(interactive_colorplot.colorplot):
 
     def on_click(self, event):
         '''
-        Handles click events
+        Handles click events (namely the image data markers)
         '''
         if event.inaxes == self.ax:
             cont, ind = self.img_data_scatter.contains(event)
             if cont:
+                if sys.version_info[1] < 7:
+                    print("Error: Python version is below 3.7.")
+                    return
                 index = ind["ind"][0]
-                image_sxm = sxm.sxm(self.img_data_points['filename'][index])
+                image_sxm = sxm.sxm(self.img_data_points[list(self.img_data_points.keys())[index]])
                 x_range = image_sxm.header['x_range (nm)']
                 y_range = image_sxm.header['y_range (nm)']
                 x_pixels = image_sxm.header['x_pixels']
