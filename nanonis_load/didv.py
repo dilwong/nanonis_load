@@ -1109,8 +1109,8 @@ class colorplot(interactive_colorplot.colorplot):
             print("Warning: " + filename + " does not have the gate voltage stored in it")
             return
 
-        if 'multipass biases' in header.keys():
-            sample_biases = header['multipass biases']
+        if 'multipass_biases' in header.keys():
+            sample_biases = header['multipass_biases']
             # Only add the marker if it's within the bounds of the spectrum
             for sample_bias in sample_biases:
                 self.img_data_points['filename'].append(filename)
@@ -1282,7 +1282,12 @@ class colorplot(interactive_colorplot.colorplot):
                 y_range = image_sxm.header['y_range (nm)']
                 x_pixels = image_sxm.header['x_pixels']
                 y_pixels = image_sxm.header['y_pixels']
-                data = image_sxm.process_data(image_sxm.data["Z (m)"][0], process='subtract plane')
+                try:
+                    multipass_index = np.argmin(np.abs(image_sxm.header["multipass_biases"] - event.xdata))
+                    data = image_sxm.process_data(image_sxm.data["Z (m)"][multipass_index], process='subtract plane')
+                except KeyError:
+                    data = image_sxm.process_data(image_sxm.data["Z (m)"][0], process='subtract plane')
+
                 data_fft = np.abs(np.fft.fftshift(np.fft.fft2(data)))
                 
                 data_vmin = np.mean(data) - self.real_cscale*np.std(data)

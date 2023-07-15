@@ -60,9 +60,10 @@ def sxm_header(filename, extra_info = None):
     try:
         multipass_header = header[':Multipass-Config:'][0]
         multipass_rows = header[':Multipass-Config:'][1:]
-        header['multipass biases'] = []
+        header['multipass_biases'] = []
         for row in multipass_rows:
-            header['multipass biases'].append(float(row.split('\t')[6]))
+            header['multipass_biases'].append(float(row.split('\t')[6]))
+        header['multipass_biases'] = np.array(header['multipass_biases'])
     except (KeyError, IndexError):
         pass
         
