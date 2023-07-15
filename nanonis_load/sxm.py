@@ -442,7 +442,9 @@ class sxm():
     def rotate_image(self, angle : float):
         raise NotImplementedError('sxm.rotate_image not yet implemented')
 
-    def set_resolution(self, new_x_resolution : int, new_y_resolution, channel : Optional[str] = None, direction : Optional[int] = None):
+    def set_resolution(self, new_x_resolution : int, new_y_resolution, 
+                        channel : Optional[str] = None, direction : Optional[int] = None,
+                        method : Optional[str] = 'linear'):
         r'''
         Linear interpolate self.data for a new resolution.
 
@@ -461,8 +463,11 @@ class sxm():
 
         from scipy.interpolate import griddata
 
-        if self.x_mask is not None or self.y_mask is not None:
-            print('Warning: x_mask or y_mask is already defined and may not match new resolution.')
+        try:
+            if self.x_mask is not None or self.y_mask is not None:
+                print('Warning: x_mask or y_mask is already defined and may not match new resolution.')
+        except AttributeError:
+            pass
         
         old_x_resolution = self.header["x_pixels"]
         old_y_resolution = self.header['y_pixels']
@@ -494,7 +499,7 @@ class sxm():
         for channel in channels:
             # for idx, _ in enumerate(self.data[channel]):
             for idx in directions:
-                interp_image = griddata(old_points, self.data[channel][idx].ravel(), new_points)
+                interp_image = griddata(old_points, self.data[channel][idx].ravel(), new_points, method=method)
                 self.data[channel][idx] = interp_image.reshape((X_new.shape))
 
 def scale(data: np.ndarray, multiply_factor: float) -> np.ndarray:
@@ -742,6 +747,34 @@ def gaussian_blur(data : np.ndarray, sigma : float) -> np.ndarray:
     from scipy.ndimage import fourier_gaussian
     return np.fft.ifft2(fourier_gaussian(np.fft.fft2(data), sigma = sigma)).real
 
+def despike(data : np.ndarray, sigma : float = 2.0) -> np.ndarray:
+    r'''
+    Removes spikes from image (iterating through vertical lines), using sigma as the threshold.
+    Parameters
+    ----------
+    data : np.ndarray
+    sigma : float
+    Returns
+    -------
+    output : np.ndarray
+    '''
+    data = data.copy()
+    for idx in range(data.shape[1]):
+        peaks = scipy.signal.find_peaks(data[:, idx] - np.mean(data[:, idx]), threshold = sigma * np.std(data[:, idx]))[0]
+        for p in peaks:
+            try:
+                data[p, idx] = (data[p - 1, idx] + data[p - 2, idx]) / 2.0
+            except IndexError:
+                pass
+
+        dips = scipy.signal.find_peaks(-(data[:, idx] - np.mean(data[:, idx])), threshold = sigma * np.std(data[:, idx]))[0]
+        for d in dips:
+            try:
+                data[d, idx] = (data[d - 1, idx] + data[d - 2, idx]) / 2.0
+            except IndexError:
+                pass
+    return data
+
 
 process_dict = {
     'absolute value': np.abs,
@@ -757,7 +790,8 @@ process_dict = {
     'subtract vertical linear fit by line': subtract_vertical_linear_by_line,
     'subtract vertical quadratic fit by line': subtract_vertical_quadratic_by_line,
     'moisan': moisan_decomposition,
-    'gaussian blur': gaussian_blur
+    'gaussian blur': gaussian_blur,
+    'despike': despike
 }
 
 
@@ -823,7 +857,7 @@ class plot():
 
     def __init__(self, sxm_data : sxm, channel : str, direction : int=0, 
                 flatten : bool=False, subtract_plane : bool=True,
-                cmap=util.get_w_cmap(), rasterized=True):
+                cmap=util.get_w_cmap(), rasterized=True, imshow_interpolation='antialiased'):
 
         self.data = sxm_data
 
@@ -854,9 +888,9 @@ class plot():
         #y = y.T
         if subtract_plane == True:
             image_data = sxm_data.subtract_plane(channel, direction)
-        # shading = 'auto' in the pcolormesh command forces pcolormesh to accept x, y with the same dimensions as image_data.T
+        
         self.im_plot = self.ax.imshow(image_data, origin='lower', extent=(0, sxm_data.x_range, 0, sxm_data.y_range), 
-                                        cmap=cmap, rasterized=rasterized) # pcolormesh chops off last column and row here
+                                        cmap=cmap, rasterized=rasterized, interpolation=imshow_interpolation)
         self.ax.set_aspect('equal')
         self.fig.colorbar(self.im_plot, ax = self.ax)
         self.image_data = image_data
@@ -868,6 +902,11 @@ class plot():
         self.ax.set_ylim(y_min, y_max)
 
     def clim(self, c_min, c_max):
+        self.im_plot.set_clim(c_min, c_max)
+
+    def std_clim(self, n_sigma):
+        c_min = np.mean(self.image_data) - n_sigma*np.std(self.image_data)
+        c_max = np.mean(self.image_data) + n_sigma*np.std(self.image_data)
         self.im_plot.set_clim(c_min, c_max)
 
     def colormap(self, cmap):
