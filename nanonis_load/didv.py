@@ -144,10 +144,14 @@ class spectrum():
         calibration_factor : float
             The calibration factor in siemens/volt.
         '''
+        current_channel_name = 'Current (A)'
+        if current_channel_name not in self.data.keys():
+            current_channel_name = 'Current [AVG] (A)'
         if method == 'derivative':
-            return np.linalg.lstsq(self.data[lockin_channel].to_numpy()[:,np.newaxis], np.gradient(self.data['Current (A)'], self.data['Bias calc (V)']), rcond=None)[0]
+            return np.linalg.lstsq(self.data[lockin_channel].to_numpy()[:,np.newaxis], np.gradient(self.data[current_channel_name], self.data['Bias calc (V)']), rcond=None)[0]
         elif method == 'integral' or method == 'integrate':
-            return np.linalg.lstsq(self.get_integrated_data(channel=lockin_channel)[f'Integrated {lockin_channel}'].to_numpy()[:,np.newaxis], self.data['Current (A)'], rcond=None)[0]
+            return np.linalg.lstsq(self.get_integrated_data(channel=lockin_channel)[f'Integrated {lockin_channel}'].to_numpy()[:,np.newaxis], self.data[current_channel_name], rcond=None)[0]
+
 
     def get_bias_offset(self):
         '''
