@@ -118,18 +118,12 @@ class colorplot(object):
         try:
             self._fake_lock = True
             self.load_data()
+            pseudocoordX, pseudocoordY = self.mesh(tilt = tilt, xshift = xshift, derivative = derivative)
             cmap = self.pcolor.cmap
             clim_min, clim_max = self.pcolor.get_clim()
             if colorbar:
                 self.colorbar.remove()
             self.pcolor.remove()
-            if not self.transpose:
-                pseudocoordX, pseudocoordY = self.mesh(tilt = tilt, xshift = xshift, derivative = derivative)
-            else:
-                pseudocoordY, pseudocoordX = self.mesh(tilt = tilt, xshift = xshift, derivative = derivative)
-                pseudocoordY = pseudocoordY.T
-                pseudocoordX = pseudocoordX.T
-
             self.pcolor = self.ax.pcolormesh(pseudocoordX, pseudocoordY, self.data, cmap = cmap)
             self.clim(clim_min, clim_max)
             if colorbar:
@@ -394,7 +388,7 @@ class drag_bar():
         self.phantom_index_value = self.index_value
         self.slice_dict[self.slice_const] = self.index
         self.colorplot_line = axline_function(self.index_value, color = self.color)
-        self.plot, = self.drag_ax.plot(self.indep_list, self.data[self.slice_dict['left'], self.slice_dict['right']], label = str(self.index_value), color = self.color)
+        self.plot, = self.drag_ax.plot(self.indep_list, self.data[self.slice_dict['left'],self.slice_dict['right']], label = str(self.index_value), color = self.color)
         legend = self.drag_ax.legend()
         self.legend_order = len(legend.get_lines()) - 1
 
