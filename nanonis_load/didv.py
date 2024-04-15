@@ -144,14 +144,10 @@ class spectrum():
         calibration_factor : float
             The calibration factor in siemens/volt.
         '''
-        current_channel_name = 'Current (A)'
-        if current_channel_name not in self.data.keys():
-            current_channel_name = 'Current [AVG] (A)'
         if method == 'derivative':
-            return np.linalg.lstsq(self.data[lockin_channel].to_numpy()[:,np.newaxis], np.gradient(self.data[current_channel_name], self.data['Bias calc (V)']), rcond=None)[0]
+            return np.linalg.lstsq(self.data[lockin_channel].to_numpy()[:,np.newaxis], np.gradient(self.data['Current (A)'], self.data['Bias calc (V)']), rcond=None)[0]
         elif method == 'integral' or method == 'integrate':
-            return np.linalg.lstsq(self.get_integrated_data(channel=lockin_channel)[f'Integrated {lockin_channel}'].to_numpy()[:,np.newaxis], self.data[current_channel_name], rcond=None)[0]
-
+            return np.linalg.lstsq(self.get_integrated_data(channel=lockin_channel)[f'Integrated {lockin_channel}'].to_numpy()[:,np.newaxis], self.data['Current (A)'], rcond=None)[0]
 
     def get_bias_offset(self):
         '''
@@ -520,6 +516,7 @@ class colorplot(interactive_colorplot.colorplot):
         increment = kwargs['increment'] if ('increment' in kwargs) else None
         transform = kwargs['transform'] if ('transform' in kwargs) else None
         diff_axis = kwargs['diff_axis'] if ('diff_axis' in kwargs) else 0
+        self.transpose = kwargs['transpose'] if ('transpose' in kwargs) else False
         dark = kwargs['dark'] if ('dark' in kwargs) else False
         axes = kwargs['axes'] if ('axes' in kwargs) else None
         over_iv = kwargs['over_iv'] if ('over_iv' in kwargs) else None
@@ -578,6 +575,7 @@ class colorplot(interactive_colorplot.colorplot):
                     bias = self.spectra_list[0].data.iloc[:,0].values - bias_shift
             except Exception:
                 bias = self.spectra_list[0].data.iloc[:,0].values
+        self.gate = np.array([spec.gate for spec in self.spectra_list])
         if transform is None:
             if multiply is None:
                 self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values
@@ -585,7 +583,7 @@ class colorplot(interactive_colorplot.colorplot):
                 # TO DO: Implement keyword multiply that accepts an iterator of length len(self.spectra_list)
                 self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values * multiply
             if over_iv is not None:
-                self.current = pd.concat(((spec.data.get('Current (A)', 0) + spec.data.get('Current [AVG] (A)', 0)) for spec in self.spectra_list),axis=1).values - over_iv[0]
+                self.current = pd.concat(((spec.data.get('Current (A)', 0) + spec.data.get('Current [AVG] (A)', 0)) for spec in self.spectra_list), axis=1).values - over_iv[0]
             self.bias = bias
         else:
             if (transform == 'diff') or (transform == 'derivative'):
@@ -653,14 +651,25 @@ class colorplot(interactive_colorplot.colorplot):
         except TypeError:
             xshift = False
         self.state_for_update['tilt_by_bias'] = tilt_by_bias
-        x, y = self.mesh(tilt = tilt_by_bias, xshift = xshift, derivative = deriv)
 
+        if not self.transpose:
+            x, y = self.mesh(tilt = tilt_by_bias, xshift = xshift, derivative = deriv)
+        else:
+            x, y = self.mesh(tilt = tilt_by_bias, xshift = xshift, derivative = deriv)
+            # x = x.T
+            # y = y.T
+            self.data = self.data.T
+            
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = pcolor_cm, rasterized = rasterized)
         self.original_cmap = self.pcolor.cmap
         if colorbar:
             self.colorbar = self.fig.colorbar(self.pcolor, ax = self.ax)
-        self.ax.set_xlabel('Sample Bias (V)')
-        self.ax.set_ylabel(index_label)
+        if not self.transpose:
+            self.ax.set_xlabel('Sample Bias (V)')
+            self.ax.set_ylabel(index_label)
+        else:
+            self.ax.set_ylabel('Sample Bias (V)')
+            self.ax.set_xlabel(index_label)
         self._x_axes_limits = list(self.ax.get_xlim())
         self._y_axes_limits = list(self.ax.get_ylim())
 
@@ -669,7 +678,7 @@ class colorplot(interactive_colorplot.colorplot):
 
         # Image data markers
         self.img_data_points = {} # Keys should be the tuple (V_s, V_g) and values should be filenames
-        self.marker_annot = self.ax.annotate("", xy=(0,0), xytext=(20,20),textcoords="offset points",
+        self.marker_annot = self.ax.annotate("", xy=(0,0), xytext=(20,20), textcoords="offset points",
                     bbox=dict(boxstyle="round", fc="w"),
                     arrowprops=dict(arrowstyle="->"),
                     zorder=2000)
@@ -726,35 +735,58 @@ class colorplot(interactive_colorplot.colorplot):
 
     @property
     def gate(self):
-        return self.ylist
+        if not self.transpose:
+            return self.ylist
+        else:
+            return self.xlist
 
     @gate.setter
     def gate(self, value):
-        self.ylist = value
+        if not self.transpose:
+            self.ylist = value
+        else:
+            self.xlist = value
 
     @property
     def index_list(self):
-        return self.ylist
-
+        if not self.transpose:
+            return self.ylist
+        else:
+            return self.xlist
+        
     @index_list.setter
     def index_list(self, value):
-        self.ylist = value
-
+        if not self.transpose:
+            self.ylist = value
+        else:
+            self.xlist = value
     @property
     def bias(self):
-        return self.xlist
-
+        if not self.transpose:
+            return self.xlist
+        else:
+            return self.ylist
+        
     @bias.setter
     def bias(self, value):
-        self.xlist = value
+        if not self.transpose:
+            self.xlist = value
+        else:
+            self.ylist = value
     
     @property
     def _bshift(self):
-        return self._xshift
+        if not self.transpose:
+            return self._yshift
+        else:
+            return self._xshift
 
     @_bshift.setter
     def _bshift(self, value):
-        self._xshift = value
+        if not self.transpose:
+            self._xshift = value
+        else:
+            self._yshift = value
 
     def load_data(self, cache = None):
         constraint = self.initial_kwarg_state['constraint'] if ('constraint' in self.initial_kwarg_state) else None
