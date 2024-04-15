@@ -955,12 +955,18 @@ class plot():
             self.fig.canvas.mpl_connect('pick_event', pick_caller)
 
     # TO DO: Add window functions.
-    def fft(self):
+    def fft(self, window_function=None):
         self.fft_fig = plt.figure()
         self.fft_ax = self.fft_fig.add_subplot(111)
-        fft_array = np.absolute(np.fft.fft2(self.image_data))
+
+        def correct_fft2D(image_data : np.ndarray, window_function : str='') -> np.ndarray:
+            window = np.ones(image_data.shape)
+            if window_function.lower() == 'blackman':
+                window = np.outer(np.blackman(image_data.shape[0]), np.blackman(image_data.shape[1]))
+            return np.fft.fftshift(np.fft.fft2(np.fft.fftshift(window * image_data)))
+        
+        fft_array = np.abs(correct_fft2D(self.image_data, window_function))
         max_fft = np.max(fft_array[1:-1,1:-1])
-        fft_array = np.fft.fftshift(fft_array)
         fft_x = -np.pi/(self.data.header['x_range (nm)']/self.data.header['x_pixels'])
         fft_y = np.pi/(self.data.header['y_range (nm)']/self.data.header['y_pixels'])
         self.fft_plot = self.fft_ax.imshow(fft_array, extent = [fft_x, -fft_x, -fft_y, fft_y], origin = 'lower')
@@ -972,3 +978,5 @@ class plot():
 
     def fft_colormap(self, cmap):
         self.fft_plot.set_cmap(cmap)
+
+
