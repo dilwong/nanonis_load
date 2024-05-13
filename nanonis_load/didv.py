@@ -514,13 +514,13 @@ class colorplot(interactive_colorplot.colorplot):
         index_label = kwargs['index_label'] if ('index_label' in kwargs) else 'Gate Voltage (V)'
         start = kwargs['start'] if ('start' in kwargs) else None
         increment = kwargs['increment'] if ('increment' in kwargs) else None
-        transform = kwargs['transform'] if ('transform' in kwargs) else None
-        diff_axis = kwargs['diff_axis'] if ('diff_axis' in kwargs) else 0
+        self.transform = kwargs['transform'] if ('transform' in kwargs) else None
+        self.diff_axis = kwargs['diff_axis'] if ('diff_axis' in kwargs) else 0
         self.transpose = kwargs['transpose'] if ('transpose' in kwargs) else False
         dark = kwargs['dark'] if ('dark' in kwargs) else False
         axes = kwargs['axes'] if ('axes' in kwargs) else None
-        over_iv = kwargs['over_iv'] if ('over_iv' in kwargs) else None
-        multiply = kwargs['multiply'] if ('multiply' in kwargs) else None
+        self.over_iv = kwargs['over_iv'] if ('over_iv' in kwargs) else None
+        self.multiply = kwargs['multiply'] if ('multiply' in kwargs) else None
         gate_as_index = kwargs['gate_as_index'] if ('gate_as_index' in kwargs) else True
         double_lockin = kwargs['double_lockin'] if ('double_lockin' in kwargs) else False
         ping_remove = kwargs['ping_remove'] if ('ping_remove' in kwargs) else False
@@ -576,28 +576,28 @@ class colorplot(interactive_colorplot.colorplot):
             except Exception:
                 bias = self.spectra_list[0].data.iloc[:,0].values
         self.gate = np.array([spec.gate for spec in self.spectra_list])
-        if transform is None:
-            if multiply is None:
+        if self.transform is None:
+            if self.multiply is None:
                 self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values
             else:
                 # TO DO: Implement keyword multiply that accepts an iterator of length len(self.spectra_list)
-                self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values * multiply
-            if over_iv is not None:
-                self.current = pd.concat(((spec.data.get('Current (A)', 0) + spec.data.get('Current [AVG] (A)', 0)) for spec in self.spectra_list), axis=1).values - over_iv[0]
+                self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values * self.multiply
+            if self.over_iv is not None:
+                self.current = pd.concat(((spec.data.get('Current (A)', 0) + spec.data.get('Current [AVG] (A)', 0)) for spec in self.spectra_list), axis=1).values - self.over_iv[0]
             self.bias = bias
         else:
-            if (transform == 'diff') or (transform == 'derivative'):
-                self.data = np.diff(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values, axis = diff_axis)
+            if (self.transform == 'diff') or (self.transform == 'derivative'):
+                self.data = np.diff(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values, axis = self.diff_axis)
                 self.bias = bias[:-1]
-                pcolor_cm = 'seismic'
-            elif (transform == 'second_derivative'):
-                self.data = np.diff(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values, axis = diff_axis)
-                self.data = np.diff(self.data, axis = diff_axis)
+                # pcolor_cm = 'seismic'
+            elif (self.transform == 'second_derivative'):
+                self.data = np.diff(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values, axis = self.diff_axis)
+                self.data = np.diff(self.data, axis = self.diff_axis)
                 bias = bias[:-2]
                 self.bias = bias
-                pcolor_cm = 'seismic'
+                # pcolor_cm = 'seismic'
             else:
-                self.data = transform(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values)
+                self.data = self.transform(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values)
                 self.bias = bias
         if axes is None:
             self.fig = plt.figure()
@@ -634,8 +634,8 @@ class colorplot(interactive_colorplot.colorplot):
                 else:
                     raise TypeError('yaxis is of unrecognized type')
 
-        if over_iv is not None:
-            self.data = self.data/self.current*(self.bias[:,np.newaxis] - over_iv[1])
+        if self.over_iv is not None:
+            self.data = self.data/self.current*(self.bias[:,np.newaxis] - self.over_iv[1])
         if over_current is not None: # Do not use over_iv and over_current at the same time!!
             self.current = pd.concat(((spec.data.get('Current (A)', 0) + spec.data.get('Current [AVG] (A)', 0)) for spec in self.spectra_list),axis=1).values - over_current
             self.data = self.data/self.current
@@ -644,7 +644,7 @@ class colorplot(interactive_colorplot.colorplot):
 
         # TO DO: This program assumes all spectra have the same bias list.
         #        Implement the ability to handle spectra with different bias lists.
-        deriv = (transform == 'diff') or (transform == 'derivative')
+        deriv = (self.transform == 'diff') or (self.transform == 'derivative')
         try:
             len(bias_shift)
             xshift = True
@@ -813,9 +813,36 @@ class colorplot(interactive_colorplot.colorplot):
                 elif callable(yaxis):
                     self.ylist = np.array([yaxis(spec) for spec in self.spectra_list])
             else:
-                self.ylist = np.array([spec.gate for spec in self.spectra_list])
+                if not self.transpose:
+                    self.ylist = np.array([spec.gate for spec in self.spectra_list])
+                else:
+                    self.xlist = np.array([spec.gate for spec in self.spectra_list])
+
         self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values  # No transform, multiply, over_iv
-    
+        if self.transform is None:
+            if self.multiply is None:
+                self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values
+            else:
+                # TO DO: Implement keyword multiply that accepts an iterator of length len(self.spectra_list)
+                self.data = pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values * self.multiply
+            if self.over_iv is not None:
+                self.current = pd.concat(((spec.data.get('Current (A)', 0) + spec.data.get('Current [AVG] (A)', 0)) for spec in self.spectra_list), axis=1).values - over_iv[0]
+            self.bias = bias
+        else:
+            if (self.transform == 'diff') or (self.transform == 'derivative'):
+                self.data = np.diff(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values, axis = self.diff_axis)
+                self.bias = bias[:-1]
+                # pcolor_cm = 'seismic'
+            elif (self.transform == 'second_derivative'):
+                self.data = np.diff(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values, axis = self.diff_axis)
+                self.data = np.diff(self.data, axis = self.diff_axis)
+                bias = bias[:-2]
+                self.bias = bias
+                # pcolor_cm = 'seismic'
+            else:
+                self.data = self.transform(pd.concat((spec.data[self.channel] for spec in self.spectra_list),axis=1).values)
+                self.bias = bias
+
     def update(self):
         colorbar = self.initial_kwarg_state['colorbar'] if ('colorbar' in self.initial_kwarg_state) else True
         super(colorplot, self).update(colorbar = colorbar, tilt = self.state_for_update['tilt_by_bias'])
@@ -1382,10 +1409,10 @@ class colorplot(interactive_colorplot.colorplot):
         
         header = self.get_header()
 
-        gate_range = f"{(round(np.amin(self.ylist), 2), round(np.amax(self.ylist), 2))} V"
-        gate_increment = f"{round(np.abs(self.ylist[1] - self.ylist[0]), 2)} V"
+        gate_range = f"{(round(np.amin(self.gate), 2), round(np.amax(self.gate), 2))} V"
+        gate_increment = f"{round(np.abs(self.gate[1] - self.gate[0]), 2)} V"
 
-        bias_range_float = (np.amin(self.xlist), np.amax(self.xlist))
+        bias_range_float = (np.amin(self.bias), np.amax(self.bias))
         if np.abs(bias_range_float[0]) < 1 or np.abs(bias_range_float[1]) < 1:
             bias_range = f"{(round(bias_range_float[0]*1000, 2), round(bias_range_float[1]*1000, 2))} mV"
         else:
@@ -1409,6 +1436,16 @@ class colorplot(interactive_colorplot.colorplot):
                 setpoint_current = f"{round(setpoint_current_float / 1e6, 2)} uA"
         except:
             setpoint_current = "Not recorded"
+
+        try:
+            gate2_float = float(header['Gate 2 (V)'])
+            if np.abs(gate2_float) < 1:
+                gate2 = f"{gate2_float * 1000} mV"
+            else:
+                gate2 = f"{gate2_float} V"
+        except:
+            gate2 = "Not recorded"
+
         try:
             lockin_amplitude_float = float(header['Lockin Amplitude'])
             bias_calibration_factor = float(header['Bias Calibration Factor'])
@@ -1433,7 +1470,7 @@ class colorplot(interactive_colorplot.colorplot):
         except:
             lockin_time_constant = "Not recorded"
         
-        return f"{filename}\n\nGate range = {gate_range}\nGate increment = {gate_increment}\nBias range = {bias_range}\nSetpoint bias = {setpoint_bias}\nCurrent = {setpoint_current}\nLockin amplitude = {lockin_amplitude}\nLockin frequency = {lockin_frequency}\nLockin sensitivity = {lockin_sensitivity}\nLockin time constant = {lockin_time_constant}"
+        return f"{filename}\n\nGate range = {gate_range}\nGate increment = {gate_increment}\nSecond gate = {gate2}\nBias range = {bias_range}\nSetpoint bias = {setpoint_bias}\nCurrent = {setpoint_current}\nLockin amplitude = {lockin_amplitude}\nLockin frequency = {lockin_frequency}\nLockin sensitivity = {lockin_sensitivity}\nLockin time constant = {lockin_time_constant}"
         
     def copy_onenote_info_string(self):
         '''
@@ -1522,7 +1559,7 @@ def batch_load(basename, file_range = None, attribute_list = None, cache = None,
         return HDF5Tospecs(basename, cachedNames = cachedNames, returnNames = True, constraint = constraint)
     else:
         if file_range is None:
-            file_range = range(9999)
+            file_range = range(99999)
         file_string = basename + '*.dat'
         file_exist = glob.glob(file_string)
         if not file_exist:
@@ -1530,6 +1567,7 @@ def batch_load(basename, file_range = None, attribute_list = None, cache = None,
         for idx, file_number in enumerate(file_range):
             filename = basename + '%0*d' % (5, file_number) + '.dat'
             if filename in file_exist:
+                print(f'Loading {filename}')
                 if cache is not None:
                     if filename in file_list: # Maybe use a set
                         continue
@@ -1658,7 +1696,7 @@ def HDF5Tospecs(filename, cachedNames = None, returnNames = False, constraint = 
     else:
         return specList
 
-def datFilesToHDF5():
+def datFilesToHDF5(file_range=None):
     r'''
     Convert .dat files in current working directory to .h5 HDF5 files.
 
@@ -1679,7 +1717,7 @@ def datFilesToHDF5():
             if basename != 'Bias-Spectroscopy': # Will still accept 'Bias-Spectroscopy_'
                 allBasenames.add(basename)
     for basename in allBasenames:
-        specs, _ = batch_load(basename)
+        specs, _ = batch_load(basename, file_range=file_range)
         specsToHDF5(specs, basename + '.h5')
 
 def quick_colorplot(*args, **kwargs):

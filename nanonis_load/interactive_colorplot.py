@@ -120,13 +120,14 @@ class colorplot(object):
             self.load_data()
             cmap = self.pcolor.cmap
             clim_min, clim_max = self.pcolor.get_clim()
+            
             if colorbar:
                 self.colorbar.remove()
             self.pcolor.remove()
             if not self.transpose:
                 pseudocoordX, pseudocoordY = self.mesh(tilt = tilt, xshift = xshift, derivative = derivative)
             else:
-                pseudocoordY, pseudocoordX = self.mesh(tilt = tilt, xshift = xshift, derivative = derivative)
+                pseudocoordX, pseudocoordY = self.mesh(tilt = tilt, xshift = xshift, derivative = derivative)
                 pseudocoordY = pseudocoordY.T
                 pseudocoordX = pseudocoordX.T
 
@@ -140,7 +141,7 @@ class colorplot(object):
         except:
             err_detect = traceback.format_exc()
             print(err_detect)
-            raise
+            # raise
         finally:
             self._fake_lock = False
 
