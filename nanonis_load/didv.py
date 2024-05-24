@@ -274,14 +274,38 @@ class spectrum():
             return x[sorted([peaks[sorted_indices[-2]], peaks[sorted_indices[-1]]])] # Indices of the two biggest peaks
 
 
-    def get_gap_size(self, mode : str='derivative', channel : str='Input 2 (V)', prominence=0.001, blur_width=0, 
-                        second_derivative_threshold=0.001, 
-                        min_search_window=(-0.01, 0.01), max_search_window=(-0.01, 0.01), verbose=False) -> float:
-        bounds = self.get_gap_bounds(mode=mode, channel=channel, prominence=prominence, 
+    def get_gap_size(self, mode : str='current', channel : str='Current (A)', prominence=0.001, blur_width=0, 
+                        second_derivative_threshold=0.001, current_threshold=1e-12,
+                        min_search_window=(-0.01, 0.01), max_search_window=(-0.01, 0.01), 
+                        verbose=False) -> float:
+        
+        if mode.lower() in ['fwhm', 'full width half max', 'derivative', 'peaks']:
+            bounds = self.get_gap_bounds(mode=mode, channel=channel, prominence=prominence, 
                                             blur_width=blur_width, verbose=verbose, 
                                             second_derivative_threshold=second_derivative_threshold, 
                                             min_search_window=min_search_window, max_search_window=max_search_window)
-        return np.abs(bounds[0] - bounds[1])
+            return np.abs(bounds[0] - bounds[1])
+        elif mode.lower() == 'current':
+            lower_threshold_indices = np.where(self.data['Current (A)'] < -current_threshold)[0]
+            if np.any(lower_threshold_indices):
+                lower_threshold_index = lower_threshold_indices.max()
+            else:
+                lower_threshold_index = 0
+
+            upper_threshold_indices = np.where(self.data['Current (A)'] > current_threshold)[0]
+            if np.any(upper_threshold_indices):
+                upper_threshold_index = upper_threshold_indices.min()
+            else:
+                upper_threshold_index = len(self.data)
+
+            bias_increment = abs(self.data['Bias calc (V)'][0] - self.data['Bias calc (V)'][1])
+            return (upper_threshold_index - lower_threshold_index) * bias_increment
+    
+    def gap_size(self, threshold) -> float:
+        '''
+        Threshold must be positive
+        '''
+        
 
 # Plot a spectrum
 class plot():
