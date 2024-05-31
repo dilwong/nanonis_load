@@ -1434,7 +1434,7 @@ class colorplot(interactive_colorplot.colorplot):
         header = self.get_header()
 
         gate_range = f"{(round(np.amin(self.gate), 2), round(np.amax(self.gate), 2))} V"
-        gate_increment = f"{round(np.abs(self.gate[1] - self.gate[0]), 2)} V"
+        gate_increment = f"{round(np.abs(self.gate[1] - self.gate[0]), 5)} V"
 
         bias_range_float = (np.amin(self.bias), np.amax(self.bias))
         if np.abs(bias_range_float[0]) < 1 or np.abs(bias_range_float[1]) < 1:
