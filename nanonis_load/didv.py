@@ -2200,10 +2200,31 @@ def fixed_gate_plot(spectra_list, gate, lower_bound, upper_bound, axes = None, c
             spectra = query(spectra_list, str(right_gate) + '<= gate <= ' + str(left_gate))
     except TypeError:
         spectra = query(spectra_list, 'gate == ' + str(gate))
-        if last:
+        if last and len(spectra) != 0:
             spectra = [ spectra[-1] ]
     ngates = len(spectra)
     if ngates == 0:
+        # KPN Hard Code 6/13/24
+        gatePoint1 = round(1.0 * gate * 10) / 10 # Round to nearest 0.1
+        spectra = query(spectra_list, 'gate == ' + str(gatePoint1))
+        if last and len(spectra) != 0:
+            spectra = [ spectra[-1] ]
+    ngates = len(spectra)
+    if ngates == 0:
+        # KPN Hard Code 6/13/24
+        gatePoint2 = round(1.0 * gate * 5) / 5 # Round to nearest 0.2
+        spectra = query(spectra_list, 'gate == ' + str(gatePoint2))
+        if last and len(spectra) != 0:
+            spectra = [ spectra[-1] ]
+    ngates = len(spectra)
+    if ngates == 0:
+        # KPN Hard Code 6/13/24
+        gatePoint5 = round(1.0 * gate * 2) / 2 # Round to nearest 0.5
+        spectra = query(spectra_list, 'gate == ' + str(gatePoint5))
+        if last and len(spectra) != 0:
+            spectra = [ spectra[-1] ]
+    ngates = len(spectra)
+    if len(spectra) == 0:
         print("ERROR: GATE NOT FOUND. FIXED_GATE_PLOT DOES NOT LOOK FOR NEAREST GATE")
         print("SKIPPING...")
         return None

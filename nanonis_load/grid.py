@@ -3,6 +3,7 @@ Loads and plots Nanonis Grid Spectroscopy (.3ds) data.
 '''
 
 import numpy as np
+import scipy.ndimage
 import matplotlib.pyplot as plt
 import matplotlib
 
@@ -138,16 +139,27 @@ class plot():
             to the clicked pixel in a new matplotlib Figure.
     '''
 
-    def __init__(self, nanonis_3ds, channel, fft = False):
+    def __init__(self, nanonis_3ds, channel, fft=False, transform=None, energy_smoothing=None):
+        '''
+        
+        '''
 
         self.header = nanonis_3ds.header
         self.data = nanonis_3ds.data[channel]
+        self.transform = transform
+        if self.transform == 'diff':
+            self.data = np.gradient(self.data, axis=-1)
+        self.energy_smoothing = energy_smoothing
+        if self.energy_smoothing is not None:
+            self.data = scipy.ndimage.gaussian_filter(self.data, self.energy_smoothing[1])
         self.energy = nanonis_3ds.energy
         self.channel = channel
         self.press = None
         self.click = None
         self.fft = fft
         self._nanonis_3ds = nanonis_3ds
+
+        self.auto_contrast = True
 
         x_size = self.header['x_size (nm)']
         y_size = self.header['y_size (nm)']
@@ -266,11 +278,13 @@ class plot():
             self.free = len(self.energy)-1
         elif self.free >= len(self.energy):
             self.free = 0
-        self.plot.set_data(np.flipud(self.data[:,:,self.free]))
+        data = np.flipud(self.data[:,:,self.free])
+        self.plot.set_data(data)
         if self.fft:
-            fft_array = np.absolute(np.fft.fft2(np.flipud(self.data[:,:,self.free])))
+            fft_array = np.absolute(np.fft.fft2(data))
             fft_array = np.fliplr(np.fft.fftshift(fft_array)) # Is this the correct orientation?
             self.fft_plot.set_data(fft_array)
+        self.plot.set_clim(data.min(), data.max())
         title='Energy = ' + str(self.energy[self.free]) + ' eV'
         self.ax.set_title(title)
         self.fig.canvas.draw()
