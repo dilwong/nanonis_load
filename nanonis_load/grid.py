@@ -343,8 +343,8 @@ class linecut(interactive_colorplot.colorplot):
         self.data = np.array([self.nanonis_3ds.data[channel][site].flatten() for site in range(self.n_positions)])
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
-        self.ax.set_xlabel('Sample Bias (V)')
-        self.ax.set_ylabel('Distance (nm)')
+        self.ax.set_xlabel('Distance (nm)')
+        self.ax.set_ylabel('Sample bias (V)')
 
         new_bias = (self.bias[1:] + self.bias[:-1]) * 0.5
         new_bias = np.insert(new_bias, 0, self.bias[0] - (self.bias[1] - self.bias[0]) * 0.5)
@@ -352,10 +352,10 @@ class linecut(interactive_colorplot.colorplot):
         new_dist = (self.dist[1:] + self.dist[:-1]) * 0.5
         new_dist = np.insert(new_dist, 0, self.dist[0] - (self.dist[1] - self.dist[0]) * 0.5)
         new_dist = np.append(new_dist, self.dist[-1] + (self.dist[-1] - self.dist[-2]) * 0.5)
-        x, y = np.meshgrid(new_bias, new_dist)
+        x, y = np.meshgrid(new_dist, new_bias)
         x = x.T
         y = y.T
-        self.data = self.data.T
+        # self.data = self.data.T
         self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap = 'RdYlBu_r')
         self.fig.colorbar(self.pcolor, ax = self.ax)
 
