@@ -118,7 +118,7 @@ class grid:
                         if k == 0:
                             for param in self.parameters:
                                 self.parameters[param].append(0)
-        self.energy = np.linspace(
+        self.biases = np.linspace(
             self.header["Start Bias (V)"],
             self.header["End Bias (V)"],
             self.header["points"],
@@ -179,9 +179,9 @@ class plot:
         self.energy_smoothing = energy_smoothing
         if self.energy_smoothing is not None:
             self.data = scipy.ndimage.gaussian_filter(
-                self.data, self.energy_smoothing[1]
+                self.data, self.energy_smoothing[1], axes=-1
             )
-        self.energy = nanonis_3ds.energy
+        self.biases = nanonis_3ds.biases
         self.channel = channel
         self.press = None
         self.click = None
@@ -192,14 +192,27 @@ class plot:
 
         x_size = self.header["x_size (nm)"]
         y_size = self.header["y_size (nm)"]
+
+        # Create axes for plotting
         if fft:
             self.fig = plt.figure(figsize=[2 * 6.4, 4.8])
-            self.ax = self.fig.add_subplot(121)
-            self.fft_ax = self.fig.add_subplot(122)
+            self.plot_ax = self.fig.add_subplot(221)
+            self.fft_ax = self.fig.add_subplot(222)
+            self.linecut_ax = self.fig.add_subplot(223)  # Axes for linecut through grid
+            self.fft_linecut_ax = self.fig.add_subplot(
+                224
+            )  # Axes for linecut through fft
+            self.linecut_ax.set_aspect("auto")
+            self.fft_linecut_ax.set_aspect("auto")
+
         else:
-            self.fig = plt.figure()
-            self.ax = self.fig.add_subplot(111)
-        self.plot = self.ax.imshow(
+            self.fig = plt.figure(figsize=[2 * 6.4, 4.8])
+            self.plot_ax = self.fig.add_subplot(121)
+            self.linecut_ax = self.fig.add_subplot(122)  # Axes for linecut through grid
+            self.linecut_ax.set_aspect("auto")
+
+        # Plot grid
+        self.plot = self.plot_ax.imshow(
             np.flipud(self.data[:, :, 0]), extent=[0, x_size, 0, y_size], cmap="Blues_r"
         )  # Check to make sure x_size and y_size aren't mixed up
         if fft:
@@ -217,12 +230,53 @@ class plot:
             self.fft_clim(0, max_fft)
         else:
             self.fft_plot = None
-        self.ax.set_xlabel("X (nm)")
-        self.ax.set_ylabel("Y (nm)")
-        self.colorbar = self.fig.colorbar(self.plot, ax=self.ax)
+
+        # Line representing the linecut will be drawn here
+        self.linecut_line = matplotlib.lines.Line2D([0, 0], [0, 0], color="r")
+        self.plot_ax.add_line(self.linecut_line)
+        # Empty linecut plot as placeholder first
+        self.linecut_plot = self.linecut_ax.imshow(
+            np.zeros((1, 1)), cmap="RdYlBu_r", aspect="auto"
+        )
+        self.linecut_ax.set_xlabel("Distance (nm)")
+        self.linecut_ax.set_ylabel("Bias (V)")
+
+        if fft:
+            self.fft_linecut_line = matplotlib.lines.Line2D([0, 0], [0, 0], color="r")
+            self.fft_ax.add_line(self.fft_linecut_line)
+            self.fft_linecut_plot = self.fft_linecut_ax.imshow(
+                np.zeros((1, 1)), cmap="RdYlBu_r", aspect="auto"
+            )
+
+        self.plot_ax.set_xlabel("X (nm)")
+        self.plot_ax.set_ylabel("Y (nm)")
+        self.colorbar = self.fig.colorbar(self.plot, ax=self.plot_ax)
         self.free = 0
-        title = "Energy = " + str(self.energy[self.free]) + " eV"
-        self.ax.set_title(title)
+        title = "Energy = " + str(self.biases[self.free]) + " eV"
+        self.plot_ax.set_title(title)
+
+        def update_linecut():
+            # Convert line endpoints to pixel units
+            xydata = self.linecut_line.get_xydata()
+            p0 = xydata[0] * self.header["x_pixels"] / self.header["x_size (nm)"]
+            p1 = xydata[1] * self.header["y_pixels"] / self.header["y_size (nm)"]
+            x0, y0 = p0.round().astype(int)
+            x1, y1 = p1.round().astype(int)
+            num_pts = int(np.hypot(x1 - x0, y1 - y0))  # Number of pixels
+            # Create list of x and y pixel coordinates
+            x, y = np.linspace(x0, x1, num_pts), np.linspace(y0, y1, num_pts)
+            # Create linecut. Is the indexing correct?
+            data_cut = self.data[y.astype(int), x.astype(int), :].T
+            print(xydata)
+            print(p0)
+            print(p1)
+
+            self.linecut_plot.set_data(data_cut)
+            length = np.hypot(xydata[1, 0] - xydata[0, 0], xydata[0, 1] - xydata[1, 1])
+            self.linecut_plot.set_extent(
+                (0, length, self.header["Start Bias (V)"], self.header["End Bias (V)"])
+            )
+            self.linecut_plot.set_clim(data_cut.min(), data_cut.max())
 
         def key_press(event):
             if event.key[0:4] == "alt+":
@@ -232,38 +286,22 @@ class plot:
             self.increment_energy(key)
 
         def on_press(event):
-            if event.inaxes == self.colorbar.ax:
-                self.press = (event.x, event.y, self.colorbar, self.plot)
-            elif (self.fft_plot is not None) and (event.inaxes == self.fft_colorbar.ax):
-                self.press = (event.x, event.y, self.fft_colorbar, self.fft_plot)
-            elif event.inaxes == self.ax:
+            if event.inaxes == self.plot_ax and event.button == 1:
                 self.click = (event.xdata, event.ydata)
+                self.linecut_line.set_xdata([event.xdata, event.xdata])
+                self.linecut_line.set_ydata([event.ydata, event.ydata])
             else:
                 return
 
         def on_motion(event):
-            if self.press is None:
-                return
-            colorbar = self.press[2]
-            if event.inaxes != colorbar.ax:
-                return
-            dx = event.x - self.press[0]
-            dy = event.y - self.press[1]
-            self.press = (event.x, event.y, colorbar, self.press[3])
-            scale = colorbar.norm.vmax - colorbar.norm.vmin
-            perc = 0.05
-            if event.button == 1:
-                colorbar.norm.vmin -= (perc * scale) * np.sign(dy)
-                colorbar.norm.vmax -= (perc * scale) * np.sign(dy)
-            elif event.button == 3:
-                colorbar.norm.vmin -= (perc * scale) * np.sign(dy)
-                colorbar.norm.vmax += (perc * scale) * np.sign(dy)
-            colorbar.draw_all()
-            self.press[3].set_norm(colorbar.norm)
-            colorbar.patch.figure.canvas.draw()
+            if event.inaxes == self.plot_ax and event.button == 1:
+                self.linecut_line.set_xdata([self.click[0], event.xdata])
+                self.linecut_line.set_ydata([self.click[1], event.ydata])
+                update_linecut()
+                self.fig.canvas.draw()
 
         def on_release(event):
-            self.press = None
+            return
 
         self.key_press = key_press
         self.fig.canvas.mpl_connect("key_press_event", key_press)
@@ -301,7 +339,7 @@ class plot:
         if ax is None:
             fig = plt.figure()
             ax = fig.add_subplot(111)
-        ax.plot(self.energy, self.data[y_pixel, x_pixel, :])
+        ax.plot(self.biases, self.data[y_pixel, x_pixel, :])
 
         # TO DO: test this
         x = (x_pixel + 0.5) * self.header["x_size (nm)"] / self.header["x_pixels"]
@@ -324,8 +362,8 @@ class plot:
         elif key == "up":
             self.free += 1
         if self.free < 0:
-            self.free = len(self.energy) - 1
-        elif self.free >= len(self.energy):
+            self.free = len(self.biases) - 1
+        elif self.free >= len(self.biases):
             self.free = 0
         data = np.flipud(self.data[:, :, self.free])
         self.plot.set_data(data)
@@ -336,8 +374,8 @@ class plot:
             )  # Is this the correct orientation?
             self.fft_plot.set_data(fft_array)
         self.plot.set_clim(data.min(), data.max())
-        title = "Energy = " + str(self.energy[self.free]) + " eV"
-        self.ax.set_title(title)
+        title = "Energy = " + str(self.biases[self.free]) + " eV"
+        self.plot_ax.set_title(title)
         self.fig.canvas.draw()
         return (self.fig,)
 
@@ -349,7 +387,7 @@ class plot:
         anim = FuncAnimation(
             self.fig,
             self.increment_energy,
-            frames=[key] * (len(self.energy) - 0),
+            frames=[key] * (len(self.biases) - 0),
             interval=wait_time,
         )  # Fix ordering
         if filename is not None:
@@ -392,7 +430,7 @@ class linecut(interactive_colorplot.colorplot):
             print("WARNING: " + filename + " IS NOT A LINE CUT")
             print("         grid.linecut MAY NOT WORK AS EXPECTED")
         self.n_energies = self.nanonis_3ds.header["points"]
-        self.bias = self.nanonis_3ds.energy
+        self.bias = self.nanonis_3ds.biases
         self.x_values = np.array(self.nanonis_3ds.parameters["X (m)"]) * 1e9
         self.y_values = np.array(self.nanonis_3ds.parameters["Y (m)"]) * 1e9
         self.dist = np.sqrt(
@@ -548,7 +586,7 @@ class gap_map:
 
         self.header = nanonis_3ds.header
         self.spec_data = nanonis_3ds.data[channel]
-        self.energy = nanonis_3ds.energy
+        self.biases = nanonis_3ds.biases
 
         self.x_pixels = self.header["x_pixels"]
         self.y_pixels = self.header["y_pixels"]
@@ -557,7 +595,7 @@ class gap_map:
         for x_pix in range(self.x_pixels):
             for y_pix in range(self.y_pixels):
                 gap_value = gap_fit_function(
-                    self.energy, self.spec_data[x_pix, y_pix, :]
+                    self.biases, self.spec_data[x_pix, y_pix, :]
                 )
                 self.gap_data[x_pix, y_pix] = gap_value
 
