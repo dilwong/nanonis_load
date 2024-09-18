@@ -267,9 +267,6 @@ class plot:
             x, y = np.linspace(x0, x1, num_pts), np.linspace(y0, y1, num_pts)
             # Create linecut. Is the indexing correct?
             data_cut = self.data[y.astype(int), x.astype(int), :].T
-            print(xydata)
-            print(p0)
-            print(p1)
 
             self.linecut_plot.set_data(data_cut)
             length = np.hypot(xydata[1, 0] - xydata[0, 0], xydata[0, 1] - xydata[1, 1])
