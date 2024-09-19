@@ -3,6 +3,7 @@ Loads and plots Nanonis Grid Spectroscopy (.3ds) data.
 """
 
 import re
+from .util import copy_text_to_clipboard
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -34,7 +35,7 @@ class grid:
     """
 
     def __init__(self, filename):
-
+        self.filename = filename
         with open(filename, "rb") as f:
             file = f.read()
 
@@ -565,6 +566,54 @@ class linecut(interactive_colorplot.colorplot):
             dbar.functions.append(slide_circle)
 
         return dbar
+
+    def get_onenote_info_string(self) -> str:
+        '''
+        Returns an info string to paste into your notes
+        '''
+        
+        filename = self.nanonis_3ds.filename
+        header = self.nanonis_3ds.header
+
+        try:
+            gate_voltage = header['Ext. VI 1>Gate voltage (V)']
+        except:
+            second_gate_voltage = "Not recorded"
+        try:
+            second_gate_voltage = header['Ext. VI 1>Second gate voltage (V)']
+        except:
+            second_gate_voltage = "Not recorded"
+
+        bias_range_float = (float(header['Start Bias (V)']), float(header['End Bias (V)']))
+        if np.abs(bias_range_float[0]) < 1 or np.abs(bias_range_float[1]) < 1:
+            bias_range = f"{(round(bias_range_float[0]*1000, 2), round(bias_range_float[1]*1000, 2))} mV"
+        else:
+            bias_range = f"{(round(bias_range_float[0], 2), round(bias_range_float[1], 2))} V"
+
+        try:
+            lockin_amplitude = (header['Ext. VI 2>Amplitude (V)'])
+        except:
+            lockin_amplitude = "Not recorded"
+        try:
+            lockin_frequency = f"{header['Ext. VI 2>Frequency (Hz)']} Hz"
+        except:
+            lockin_frequency = "Not recorded"
+        try:
+            lockin_sensitivity = header['Ext. VI 2>Sensitivity']
+        except:
+            lockin_sensitivity = "Not recorded"
+        try: 
+            lockin_time_constant = header['Ext. VI 2>Time constant']
+        except:
+            lockin_time_constant = "Not recorded"
+        
+        return f"{filename}\n\nGate voltage = {gate_voltage} V\nSecond gate = {second_gate_voltage} V\nBias range = {bias_range}\nLockin amplitude = {lockin_amplitude}\nLockin frequency = {lockin_frequency}\nLockin sensitivity = {lockin_sensitivity}\nLockin time constant = {lockin_time_constant}"
+        
+    def copy_onenote_info_string(self):
+        '''
+        Copies the string returned by get_onenote_info_string() onto the clipboard.
+        '''
+        copy_text_to_clipboard(self.get_onenote_info_string())
 
 
 def quick_plot(filename, **kwargs):
