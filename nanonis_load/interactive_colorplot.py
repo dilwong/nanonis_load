@@ -17,7 +17,7 @@ class ColorplotException(Exception):
         super(ColorplotException, self).__init__(message)
 
 # TO DO: Turn this into an abstract base class
-class colorplot(object):
+class Colorplot(object):
 
     r"""
     Colorplot object that is inherited by didv.colorplot.
@@ -272,7 +272,7 @@ class colorplot(object):
             self._drag_color_index += 1
             self._drag_color_index = self._drag_color_index % len(self._color_cycle)
 
-        return drag_bar(self, direction, axes, color, initial_value, self.xlist, self.ylist, locator_axes = locator_axes)
+        return DragBar(self, direction, axes, color, initial_value, self.xlist, self.ylist, locator_axes = locator_axes)
 
     def define_colormap(self):
 
@@ -337,7 +337,7 @@ class colorplot(object):
         self.colormap(new_cmap, change_original = False)
 
     def add_colorbar_rectangle(self, x_value, y_value):
-        rect = colorbar_rectangle(x_value, y_value, self)
+        rect = ColorbarRectangle(x_value, y_value, self)
         self._colorbar_rectangles.append(rect)
         self.ax.add_patch(rect.rect)
         self.fig.canvas.draw()
@@ -350,7 +350,7 @@ class colorplot(object):
         print('C_MAX: ' + str(c_max))
         return self.pcolor.cmap(np.linspace(0,1,256))
 
-class drag_bar():
+class DragBar():
 
     def __init__(self, colorplot, direction, axes, color, initial_value, xlist, ylist, locator_axes = None):
 
@@ -572,7 +572,7 @@ class drag_bar():
         self.updated = True
         self.waiting = False
 
-class colorbar_rectangle():
+class ColorbarRectangle():
 
     def __init__(self, x_value, y_value, colorplot):
 

@@ -8,6 +8,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.ndimage
+import scipy.optimize
+import scipy.signal
 
 try:
     from . import interactive_colorplot
@@ -15,7 +17,7 @@ except ImportError:
     import interactive_colorplot
 
 
-class grid:
+class Nanonis3ds:
     r"""
     grid.nanonis_3ds loads Nanonis .3ds files.
 
@@ -133,7 +135,7 @@ class grid:
 
 
 # TO DO: Copy data to clipboard
-class plot:
+class Grid:
     r"""
     Plots the 2D grid spectroscopy data.
     Press the keyboard arrow keys (UP and DOWN) to change the bias/energy of the image.
@@ -167,12 +169,17 @@ class plot:
     """
 
     def __init__(
-        self, nanonis_3ds, channel, fft=False, transform=None, energy_smoothing=None
+        self,
+        filename,
+        channel="Input 2 (V)",
+        fft=False,
+        transform=None,
+        energy_smoothing=None,
     ):
         """ """
-
-        self.header = nanonis_3ds.header
-        self.data = nanonis_3ds.data[channel]
+        self.nanonis_3ds = Nanonis3ds(filename)
+        self.header = self.nanonis_3ds.header
+        self.data = self.nanonis_3ds.data[channel]
         self.transform = transform
         if self.transform == "diff":
             self.data = np.gradient(self.data, axis=-1)
@@ -181,12 +188,12 @@ class plot:
             self.data = scipy.ndimage.gaussian_filter(
                 self.data, self.energy_smoothing[1], axes=-1
             )
-        self.biases = nanonis_3ds.biases
+        self.biases = self.nanonis_3ds.biases
         self.channel = channel
         self.press = None
         self.click = None
         self.fft = fft
-        self._nanonis_3ds = nanonis_3ds
+        self._nanonis_3ds = self.nanonis_3ds
 
         self.auto_contrast = True
 
@@ -238,6 +245,7 @@ class plot:
         self.linecut_plot = self.linecut_ax.imshow(
             np.zeros((1, 1)), cmap="RdYlBu_r", aspect="auto"
         )
+        self.fig.colorbar(self.linecut_plot)
         self.linecut_ax.set_xlabel("Distance (nm)")
         self.linecut_ax.set_ylabel("Bias (V)")
 
@@ -268,12 +276,28 @@ class plot:
             # Create linecut. Is the indexing correct?
             data_cut = self.data[y.astype(int), x.astype(int), :].T
 
+            min_bias = np.amin(
+                [
+                    float(self.header["Start Bias (V)"]),
+                    float(self.header["End Bias (V)"]),
+                ]
+            )
+            max_bias = np.amax(
+                [
+                    float(self.header["Start Bias (V)"]),
+                    float(self.header["End Bias (V)"]),
+                ]
+            )
+
+            if float(self.header["Start Bias (V)"]) < float(
+                self.header["End Bias (V)"]
+            ):
+                data_cut = np.flipud(data_cut)
+
             self.linecut_plot.set_data(data_cut)
             length = np.hypot(xydata[1, 0] - xydata[0, 0], xydata[0, 1] - xydata[1, 1])
-            self.linecut_plot.set_extent(
-                (0, length, self.header["Start Bias (V)"], self.header["End Bias (V)"])
-            )
-            self.linecut_plot.set_clim(data_cut.min(), data_cut.max())
+            self.linecut_plot.set_extent((0, length, min_bias, max_bias))
+            self.linecut_plot.set_clim(0, data_cut.max())
 
         def key_press(event):
             if event.key[0:4] == "alt+":
@@ -390,9 +414,45 @@ class plot:
         if filename is not None:
             anim.save(filename, dpi=dpi, writer=writer)
 
+    def extract_peak_energy(self, fit_radius=5, prominence=0.1, width=0, std=0.002):
+        """
+        Extract peak energy as a function of position in the grid
+        """
+
+        # Define gaussian for fitting
+        def gaussian(x, x0, A, sigma, C):
+            return A * np.exp(-((x - x0) ** 2) / (2 * sigma**2)) + C
+
+        peak_energies = np.zeros(self.data.shape[:-1])
+        for i in range(self.data.shape[0]):
+            for j in range(self.data.shape[1]):
+                spectrum = self.data[i, j, :]
+                peaks, properties = scipy.signal.find_peaks(
+                    spectrum, prominence=prominence, width=width
+                )
+                peak_ind = peaks[np.argmax(properties["prominences"])]
+                fit_start = peak_ind - fit_radius if peak_ind - fit_radius > 0 else 0
+                fit_end = (
+                    peak_ind + fit_radius
+                    if peak_ind + fit_radius < self.header["points"]
+                    else self.header["points"]
+                )
+
+                p0 = (self.biases[peak_ind], spectrum[peak_ind], std, 0)
+
+                fit, cov = scipy.optimize.curve_fit(
+                    gaussian,
+                    self.biases[fit_start:fit_end],
+                    spectrum[fit_start:fit_end],
+                    p0,
+                )
+                peak_energies[i, j] = fit[0]
+
+        return peak_energies
+
 
 # Loads and plots 3DS line cuts
-class linecut(interactive_colorplot.colorplot):
+class Linecut(interactive_colorplot.Colorplot):
     r"""
     Loads and plots a 1D line cut from a .3ds file as a colorplot with the bias on the
     x-axis and the distance on the y-axis.
@@ -416,12 +476,12 @@ class linecut(interactive_colorplot.colorplot):
 
     def __init__(self, filename, channel):
 
-        interactive_colorplot.colorplot.__init__(self)
+        interactive_colorplot.Colorplot.__init__(self)
         self.sxm_fig = None
         self.sxm_data = None
 
         # Load data with filename
-        self.nanonis_3ds = grid(filename)
+        self.nanonis_3ds = Nanonis3ds(filename)
         self.n_positions = self.nanonis_3ds.header["x_pixels"]
         if self.nanonis_3ds.header["y_pixels"] != 1:
             print("WARNING: " + filename + " IS NOT A LINE CUT")
@@ -535,7 +595,7 @@ class linecut(interactive_colorplot.colorplot):
 
     def drag_bar(self, direction="horizontal", locator=False, axes=None, color=None):
 
-        dbar = super(linecut, self).drag_bar(
+        dbar = super(Linecut, self).drag_bar(
             direction=direction, locator=locator, axes=axes, color=color
         )
 
@@ -569,15 +629,15 @@ class linecut(interactive_colorplot.colorplot):
 
 def quick_plot(filename, **kwargs):
 
-    loaded_data = grid(filename)
+    loaded_data = Nanonis3ds(filename)
     try:
-        return plot(loaded_data, channel="Input 2 (V)", **kwargs)
+        return Grid(loaded_data, channel="Input 2 (V)", **kwargs)
     except KeyError:
-        return plot(loaded_data, channel="Input 2 [AVG] (V)", **kwargs)
+        return Grid(loaded_data, channel="Input 2 [AVG] (V)", **kwargs)
 
 
 # TO DO: Test gap map program.
-class gap_map:
+class GapMap:
 
     def __init__(self, nanonis_3ds, channel, gap_fit_function):
 

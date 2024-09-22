@@ -136,7 +136,7 @@ class landau_fan():
         for filename in fileList: # Insert all spectra not cached into self.files and self.spectra_list
             if filename not in cacheFiles:
                 self.files.append(filename)
-                spec = didv.spectrum(filename)
+                spec = didv.Spectrum(filename)
                 spec.Bz = float(spec.header['Magnetic Field Z (T)'])
                 bias_list = spec.data['Bias calc (V)']
                 bias_index = min(range(len(bias_list)), key = lambda idx: abs(bias_list[idx] - self.bias))
