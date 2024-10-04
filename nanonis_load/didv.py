@@ -1997,7 +1997,6 @@ def batch_load(
         for idx, file_number in enumerate(file_range):
             filename = basename + "%0*d" % (5, file_number) + ".dat"
             if filename in file_exist:
-                print(f"Loading {filename}")
                 if cache is not None:
                     if filename in file_list:  # Maybe use a set
                         continue
@@ -2600,7 +2599,6 @@ class LineCutGateSweep:
 
         self.ax.set_ylabel("Bias (mV)")
         self.fig.colorbar(self.im)
-        
 
     @property
     def bias_lower(self):
@@ -3452,4 +3450,3 @@ def quick_landau_fan(
         normalize=normalize,
     )
     return fan
-
