@@ -906,11 +906,11 @@ class plot():
                     if scatter_plot == event.artist:
                         try:
                             spec_obj.data['Input 2 (V)']
-                            didv.plot(spec_obj, channel = 'Input 2 (V)')
+                            didv.Plot(spec_obj, channel = 'Input 2 (V)')
                         except KeyError:
                             #err_detect = traceback.format_exc()
                             #print(err_detect)
-                            didv.plot(spec_obj, channel = 'Input 2 [AVG] (V)')
+                            didv.Plot(spec_obj, channel = 'Input 2 [AVG] (V)')
                 return on_pick
             pick_caller = picker_factory(spectrum_inst, s_plt)
             self.fig.canvas.mpl_connect('pick_event', pick_caller)

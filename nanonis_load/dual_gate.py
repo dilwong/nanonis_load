@@ -137,7 +137,7 @@ class dual_gate:
         else:
             raise Exception('Unknown yaxis parameter')
         if isinstance(gate, (int, long, float)):
-            return didv.colorplot(otherGateDict[self._toKey(gate)], yaxis = yaxis, index_label = ylabel, **kwargs)
+            return didv.Colorplot(otherGateDict[self._toKey(gate)], yaxis = yaxis, index_label = ylabel, **kwargs)
         elif isinstance(gate, str):
             raise NotImplementedError('Not yet implemented!') # TO DO: Use didv.query or string parsing to specify gate ranges for plotting
         else:
