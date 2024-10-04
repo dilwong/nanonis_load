@@ -176,11 +176,13 @@ class Grid:
         fft=False,
         transform=None,
         energy_smoothing=None,
+        plot=False,
     ):
         """ """
         self.nanonis_3ds = Nanonis3ds(filename)
+        self.filename = filename
         self.header = self.nanonis_3ds.header
-        self.data = self.nanonis_3ds.data[channel]
+        self.data = self.nanonis_3ds.data
         self.transform = transform
         if self.transform == "diff":
             self.data = np.gradient(self.data, axis=-1)
@@ -198,11 +200,33 @@ class Grid:
 
         self.auto_contrast = True
 
-        x_size = self.header["x_size (nm)"]
-        y_size = self.header["y_size (nm)"]
+    @property
+    def gate_voltage(self):
+        return float(self.header["Ext. VI 1>Gate voltage (V)"])
 
+    @property
+    def x_size(self):
+        """Returns the x size in nm."""
+        return float(self.header["x_size (nm)"])
+
+    @property
+    def x_pixels(self):
+        """Returns the number of pixels in the x direction."""
+        return int(self.header["x_pixels"])
+
+    @property
+    def y_size(self):
+        """Returns the y size in nm"""
+        return float(self.header["y_size (nm)"])
+
+    @property
+    def y_pixels(self):
+        """Returns the number of pixels in the y direction."""
+        return int(self.header["y_size (nm)"])
+
+    def plot(self, channel="Input 2 (V)"):
         # Create axes for plotting
-        if fft:
+        if self.fft:
             self.fig = plt.figure(figsize=[2 * 6.4, 4.8])
             self.plot_ax = self.fig.add_subplot(221)
             self.fft_ax = self.fig.add_subplot(222)
@@ -220,17 +244,19 @@ class Grid:
             self.linecut_ax.set_aspect("auto")
 
         # Plot grid
-        self.plot = self.plot_ax.imshow(
-            np.flipud(self.data[:, :, 0]), extent=[0, x_size, 0, y_size], cmap="Blues_r"
+        self.im = self.plot_ax.imshow(
+            np.flipud(self.data[channel][:, :, 0]),
+            extent=(0, self.header["x_size (nm)"], 0, self.header["y_size (nm)"]),
+            cmap="Blues_r",
         )  # Check to make sure x_size and y_size aren't mixed up
-        if fft:
-            fft_array = np.absolute(np.fft.fft2(np.flipud(self.data[:, :, 0])))
+        if self.fft:
+            fft_array = np.absolute(np.fft.fft2(np.flipud(self.data[channel][:, :, 0])))
             max_fft = np.max(fft_array[1:-1, 1:-1])
             fft_array = np.fliplr(
                 np.fft.fftshift(fft_array)
             )  # Is this the correct orientation?
-            fft_x = -np.pi / x_size
-            fft_y = np.pi / y_size
+            fft_x = -np.pi / self.header["x_size (nm)"]
+            fft_y = np.pi / self.header["y_size (nm)"]
             self.fft_plot = self.fft_ax.imshow(
                 fft_array, extent=[fft_x, -fft_x, -fft_y, fft_y], origin="lower"
             )
@@ -250,7 +276,7 @@ class Grid:
         self.linecut_ax.set_xlabel("Distance (nm)")
         self.linecut_ax.set_ylabel("Bias (V)")
 
-        if fft:
+        if self.fft:
             self.fft_linecut_line = matplotlib.lines.Line2D([0, 0], [0, 0], color="r")
             self.fft_ax.add_line(self.fft_linecut_line)
             self.fft_linecut_plot = self.fft_linecut_ax.imshow(
@@ -259,7 +285,7 @@ class Grid:
 
         self.plot_ax.set_xlabel("X (nm)")
         self.plot_ax.set_ylabel("Y (nm)")
-        self.colorbar = self.fig.colorbar(self.plot, ax=self.plot_ax)
+        self.colorbar = self.fig.colorbar(self.im, ax=self.plot_ax)
         self.free = 0
         title = "Energy = " + str(self.biases[self.free]) + " eV"
         self.plot_ax.set_title(title)
@@ -275,7 +301,7 @@ class Grid:
             # Create list of x and y pixel coordinates
             x, y = np.linspace(x0, x1, num_pts), np.linspace(y0, y1, num_pts)
             # Create linecut. Is the indexing correct?
-            data_cut = self.data[y.astype(int), x.astype(int), :].T
+            data_cut = self.data[channel][y.astype(int), x.astype(int), :].T
 
             min_bias = np.amin(
                 [
@@ -298,14 +324,37 @@ class Grid:
             self.linecut_plot.set_data(data_cut)
             length = np.hypot(xydata[1, 0] - xydata[0, 0], xydata[0, 1] - xydata[1, 1])
             self.linecut_plot.set_extent((0, length, min_bias, max_bias))
-            self.linecut_plot.set_clim(0, data_cut.max())
+            try:
+                self.linecut_plot.set_clim(0, data_cut.max())
+            except:
+                pass
 
         def key_press(event):
             if event.key[0:4] == "alt+":
                 key = event.key[4:]
             else:
                 key = event.key
-            self.increment_energy(key)
+
+            if key == "down":
+                self.free -= 1
+            elif key == "up":
+                self.free += 1
+            if self.free < 0:
+                self.free = len(self.biases) - 1
+            elif self.free >= len(self.biases):
+                self.free = 0
+            data = np.flipud(self.data[channel][:, :, self.free])
+            self.im.set_data(data)
+            if self.fft:
+                fft_array = np.absolute(np.fft.fft2(data))
+                fft_array = np.fliplr(
+                    np.fft.fftshift(fft_array)
+                )  # Is this the correct orientation?
+                self.fft_plot.set_data(fft_array)
+            self.im.set_clim(data.min(), data.max())
+            title = "Energy = " + str(self.biases[self.free]) + " eV"
+            self.plot_ax.set_title(title)
+            self.fig.canvas.draw()
 
         def on_press(event):
             if event.inaxes == self.plot_ax and event.button == 1:
@@ -332,10 +381,10 @@ class Grid:
         self.fig.canvas.mpl_connect("button_release_event", on_release)
 
     def clim(self, c_min, c_max):
-        self.plot.set_clim(c_min, c_max)
+        self.im.set_clim(c_min, c_max)
 
     def colormap(self, cmap):
-        self.plot.set_cmap(cmap)
+        self.im.set_cmap(cmap)
 
     def fft_clim(self, c_min, c_max):
         self.fft_plot.set_clim(c_min, c_max)
@@ -361,7 +410,7 @@ class Grid:
         if ax is None:
             fig = plt.figure()
             ax = fig.add_subplot(111)
-        ax.plot(self.biases, self.data[y_pixel, x_pixel, :])
+        ax.plot(self.biases, self.data[channel][y_pixel, x_pixel, :])
 
         # TO DO: test this
         x = (x_pixel + 0.5) * self.header["x_size (nm)"] / self.header["x_pixels"]
@@ -378,29 +427,6 @@ class Grid:
         print("x = " + str(transformed_x) + " nm")
         print("y = " + str(transformed_y) + " nm")
 
-    def increment_energy(self, key):
-        if key == "down":
-            self.free -= 1
-        elif key == "up":
-            self.free += 1
-        if self.free < 0:
-            self.free = len(self.biases) - 1
-        elif self.free >= len(self.biases):
-            self.free = 0
-        data = np.flipud(self.data[:, :, self.free])
-        self.plot.set_data(data)
-        if self.fft:
-            fft_array = np.absolute(np.fft.fft2(data))
-            fft_array = np.fliplr(
-                np.fft.fftshift(fft_array)
-            )  # Is this the correct orientation?
-            self.fft_plot.set_data(fft_array)
-        self.plot.set_clim(data.min(), data.max())
-        title = "Energy = " + str(self.biases[self.free]) + " eV"
-        self.plot_ax.set_title(title)
-        self.fig.canvas.draw()
-        return (self.fig,)
-
     # dpi does not work... why?
     # Needs a MovieWriter
     def animate(self, key, wait_time=200, filename=None, dpi=80, writer="pillow"):
@@ -415,7 +441,9 @@ class Grid:
         if filename is not None:
             anim.save(filename, dpi=dpi, writer=writer)
 
-    def extract_peak_energy(self, fit_radius=5, prominence=0.1, width=0, std=0.002):
+    def extract_peak_energies(
+        self, channel="Input 2 (V)", fit_radius=5, prominence=0.1, width=0, std=0.002
+    ):
         """
         Extract peak energy as a function of position in the grid
         """
@@ -424,10 +452,10 @@ class Grid:
         def gaussian(x, x0, A, sigma, C):
             return A * np.exp(-((x - x0) ** 2) / (2 * sigma**2)) + C
 
-        peak_energies = np.zeros(self.data.shape[:-1])
-        for i in range(self.data.shape[0]):
-            for j in range(self.data.shape[1]):
-                spectrum = self.data[i, j, :]
+        peak_energies = np.zeros(self.data[channel].shape[:-1])
+        for i in range(self.data[channel].shape[0]):
+            for j in range(self.data[channel].shape[1]):
+                spectrum = self.data[channel][i, j, :]
                 peaks, properties = scipy.signal.find_peaks(
                     spectrum, prominence=prominence, width=width
                 )

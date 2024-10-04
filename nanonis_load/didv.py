@@ -2599,7 +2599,6 @@ class LineCutGateSweep:
 
         self.ax.set_ylabel("Bias (mV)")
         self.fig.colorbar(self.im)
-        
 
     @property
     def bias_lower(self):
@@ -3451,4 +3450,3 @@ def quick_landau_fan(
         normalize=normalize,
     )
     return fan
-
