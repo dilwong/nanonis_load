@@ -456,10 +456,14 @@ class Grid:
         for i in range(self.data[channel].shape[0]):
             for j in range(self.data[channel].shape[1]):
                 spectrum = self.data[channel][i, j, :]
-                peaks, properties = scipy.signal.find_peaks(
-                    spectrum, prominence=prominence, width=width
-                )
-                peak_ind = peaks[np.argmax(properties["prominences"])]
+                try:
+                    peaks, properties = scipy.signal.find_peaks(
+                        spectrum, prominence=prominence, width=width
+                    )
+                    peak_ind = peaks[np.argmax(properties["prominences"])]
+                except ValueError:
+                    peak_ind = np.argmax(spectrum)
+
                 fit_start = peak_ind - fit_radius if peak_ind - fit_radius > 0 else 0
                 fit_end = (
                     peak_ind + fit_radius
@@ -478,7 +482,19 @@ class Grid:
                 peak_energies[i, j] = fit[0]
 
         return peak_energies
-
+    
+    def copy_onenote_info_string(self):
+        gate_voltage = float(self.header['Ext. VI 1>Gate voltage (V)'])
+        second_gate_voltage = float(self.header['Ext. VI 1>Second gate voltage (V)'])
+        lockin_amplitude = float(self.header['Ext. VI 2>Amplitude (V)'])
+        lockin_frequency = float(self.header['Ext. VI 2>Frequency (Hz)'])
+        lockin_sensitivity = self.header['Ext. VI 2>Sensitivity']
+        lockin_time_constant = self.header['Ext. VI 2>Time constant']
+        lockin_phase = float(self.header['Ext. VI 2>Phase'])
+        Cx_temp = float(self.header['Ext. VI 3>STM Cx Temp (K)'])
+        Rx_temp = float(self.header['Ext. VI 3>STM Rx Temp (K)'])
+        return_string = f"{self.filename}\n\nGate voltage = {gate_voltage} V\nSecond gate voltage = {second_gate_voltage} V\nLockin amplitude = {lockin_amplitude} (V)\nLockin frequency = {lockin_frequency} Hz\nLockin sensitivity = {lockin_sensitivity}\nLockin time constant = {lockin_time_constant}\nLockin phase = {lockin_phase}\nCx temperature = {Cx_temp}\nRx temperature = {Rx_temp}"
+        copy_text_to_clipboard(return_string)
 
 # Loads and plots 3DS line cuts
 class Linecut(interactive_colorplot.Colorplot):
@@ -503,7 +519,7 @@ class Linecut(interactive_colorplot.Colorplot):
             Plots an image from a .sxm file, and draws a line on the image indicating the location of the .3ds line cut.
     """
 
-    def __init__(self, filename, channel):
+    def __init__(self, filename, channel, normalize=False):
 
         interactive_colorplot.Colorplot.__init__(self)
         self.sxm_fig = None
@@ -530,6 +546,10 @@ class Linecut(interactive_colorplot.Colorplot):
                 for site in range(self.n_positions)
             ]
         )
+        if normalize == 'integral':
+            self.data = (self.data.T / np.sum(self.data, axis=-1)).T
+        elif normalize == 'max':
+            self.data = (self.data.T / np.amax(self.data, axis=-1)).T
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
         self.ax.set_xlabel("Distance (nm)")
