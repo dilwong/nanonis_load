@@ -3,7 +3,6 @@ Loads and plots Nanonis Grid Spectroscopy (.3ds) data.
 """
 
 import re
-from .util import copy_text_to_clipboard
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -11,6 +10,8 @@ import numpy as np
 import scipy.ndimage
 import scipy.optimize
 import scipy.signal
+
+from .util import copy_text_to_clipboard
 
 try:
     from . import interactive_colorplot
@@ -222,7 +223,21 @@ class Grid:
     @property
     def y_pixels(self):
         """Returns the number of pixels in the y direction."""
-        return int(self.header["y_size (nm)"])
+        return int(self.header["y_pixels"])
+
+    @property
+    def Z(self):
+        """Returns the topography from the initial Z of each spectrum."""
+        # TODO: MAKE SURE THE INDICES ARE CORRECT IF THE GRID IS NON SQUARE
+        return np.array(self.nanonis_3ds.parameters["Z (m)"]).reshape(
+            (self.y_pixels, self.x_pixels)
+        )
+
+    def __eq__(self, other):
+        return self.gate_voltage == other.gate_voltage
+
+    def __lt__(self, other):
+        return self.gate_voltage < other.gate_voltage
 
     def plot(self, channel="Input 2 (V)"):
         # Create axes for plotting
@@ -392,6 +407,13 @@ class Grid:
     def fft_colormap(self, cmap):
         self.fft_plot.set_cmap(cmap)
 
+    def plot_spectrum(self, i, j, channel="Input 2 (V)", fig=None, ax=None):
+        if ax is None:
+            fig, ax = plt.subplots()
+        ax.plot(self.biases, self.data[channel][i, j, :])
+
+        return fig, ax
+
     # TO DO: Implement channel keyword
     def show_spectra(self, channel=None, ax=None):
 
@@ -442,28 +464,96 @@ class Grid:
             anim.save(filename, dpi=dpi, writer=writer)
 
     def extract_peak_energies(
-        self, channel="Input 2 (V)", fit_radius=5, prominence=0.1, width=0, std=0.002
+        self,
+        channel="Input 2 (V)",
+        fit_radius=5,
+        prominence=0.1,
+        width=0,
+        std=0.002,
+        maxfev=1000,
+        fallback="max",
+        peak_choosing_method="prominences",
+        skip_first_spectrum=False,
+        verbose=False,
+        full_output=True,
+        break_on_exception=False,
     ):
         """
         Extract peak energy as a function of position in the grid
+
+        Parameters
+        ----------
+        channel : str
+            The data channel to do peak energy extraction on.
+        fit_radius : int
+            The radius of the range of points to do Gaussian fitting on.
+            Default is 5.
+        prominence : float
+            Peak prominence used in scipy.signal.find_peaks().
+        width : int
+            Peak width used in scipy.signal.find_peaks().
+        std : float
+            Standard deviation used in the initial guess for Gaussian fitting.
+        maxfev : int
+            Maximum number of function evaluations used in scipy.optimize.curve_fit().
+        fallback : {'max', 'peak_ind'}
+            Method of peak finding used if Gaussian fitting fails
+            'max': Uses the bias of the maximum value in the spectrum
+        peak_choosing_method : {'tracking', 'prominence', 'min', 'max'}
+            The method for choosing between several peaks that
+            scipy.signal.find_peaks() finds.
+        skip_first_spectrum : bool
+            Whether or not to skip the first spectrum. If skipped, will take average
+            of two neighboring peak energies.
+        verbose : bool
+            Prints diagnostic information if true.
+        full_output : bool
+            Returns additional information such as peak indices.
+
+        Returns
+        -------
+        peak_energies : ndarray
+            Numpy array of peak energies extracted from each spectrum.
         """
 
         # Define gaussian for fitting
         def gaussian(x, x0, A, sigma, C):
             return A * np.exp(-((x - x0) ** 2) / (2 * sigma**2)) + C
 
-        peak_energies = np.zeros(self.data[channel].shape[:-1])
+        peak_energies = np.zeros((self.y_pixels, self.x_pixels))
+
+        last_peak_ind = 0  # Initalized for peak_tracking
+        # Loop through all spectrum and extract peaks
         for i in range(self.data[channel].shape[0]):
             for j in range(self.data[channel].shape[1]):
+                if i == 0 and j == 0 and skip_first_spectrum:
+                    continue  # Skips fitting the first spectrum
                 spectrum = self.data[channel][i, j, :]
                 try:
                     peaks, properties = scipy.signal.find_peaks(
                         spectrum, prominence=prominence, width=width
                     )
-                    peak_ind = peaks[np.argmax(properties["prominences"])]
-                except ValueError:
-                    peak_ind = np.argmax(spectrum)
 
+                    # Choose between peak choosing methods
+                    if peak_choosing_method.lower() in ["track", "tracking"]:
+                        peak_ind = peaks[np.argmin(np.abs(peaks - last_peak_ind))]
+                    elif peak_choosing_method.lower() in ["prominence", "prominences"]:
+                        peak_ind = peaks[np.argmax(properties["prominences"])]
+                    elif peak_choosing_method.lower() == "min":
+                        peak_ind = np.amin(peaks)
+                    elif peak_choosing_method.lower() == "max":
+                        peak_ind = np.amax(peaks)
+                    else:
+                        raise ValueError(
+                            f"peak_choosing_method {peak_choosing_method} not recognized."
+                        )
+                except ValueError as e:
+                    if verbose:
+                        print(e)
+                    peak_ind = np.argmax(spectrum)
+                    if break_on_exception:
+                        breakpoint()
+                last_peak_ind = peak_ind
                 fit_start = peak_ind - fit_radius if peak_ind - fit_radius > 0 else 0
                 fit_end = (
                     peak_ind + fit_radius
@@ -473,28 +563,45 @@ class Grid:
 
                 p0 = (self.biases[peak_ind], spectrum[peak_ind], std, 0)
 
-                fit, cov = scipy.optimize.curve_fit(
-                    gaussian,
-                    self.biases[fit_start:fit_end],
-                    spectrum[fit_start:fit_end],
-                    p0,
-                )
-                peak_energies[i, j] = fit[0]
+                try:
+                    fit, cov = scipy.optimize.curve_fit(
+                        gaussian,
+                        self.biases[fit_start:fit_end],
+                        spectrum[fit_start:fit_end],
+                        p0,
+                        maxfev=maxfev,
+                    )
+                    peak_energies[i, j] = fit[0]
+                except RuntimeError as e:
+                    print(
+                        f"Error fitting point ({i}, {j}). Falling back to {fallback}."
+                    )
+                    if verbose:
+                        print(e)
+                    if fallback == "max":
+                        peak_energies[i, j] = self.biases[np.argmax(spectrum)]
+                    else:
+                        peak_energies[i, j] = self.biases[peak_ind]
+
+        if skip_first_spectrum:
+            # Take average of neighboring points for first spectrum
+            peak_energies[0, 0] = (peak_energies[1, 0] + peak_energies[0, 1]) / 2
 
         return peak_energies
-    
+
     def copy_onenote_info_string(self):
-        gate_voltage = float(self.header['Ext. VI 1>Gate voltage (V)'])
-        second_gate_voltage = float(self.header['Ext. VI 1>Second gate voltage (V)'])
-        lockin_amplitude = float(self.header['Ext. VI 2>Amplitude (V)'])
-        lockin_frequency = float(self.header['Ext. VI 2>Frequency (Hz)'])
-        lockin_sensitivity = self.header['Ext. VI 2>Sensitivity']
-        lockin_time_constant = self.header['Ext. VI 2>Time constant']
-        lockin_phase = float(self.header['Ext. VI 2>Phase'])
-        Cx_temp = float(self.header['Ext. VI 3>STM Cx Temp (K)'])
-        Rx_temp = float(self.header['Ext. VI 3>STM Rx Temp (K)'])
+        gate_voltage = float(self.header["Ext. VI 1>Gate voltage (V)"])
+        second_gate_voltage = float(self.header["Ext. VI 1>Second gate voltage (V)"])
+        lockin_amplitude = float(self.header["Ext. VI 2>Amplitude (V)"])
+        lockin_frequency = float(self.header["Ext. VI 2>Frequency (Hz)"])
+        lockin_sensitivity = self.header["Ext. VI 2>Sensitivity"]
+        lockin_time_constant = self.header["Ext. VI 2>Time constant"]
+        lockin_phase = float(self.header["Ext. VI 2>Phase"])
+        Cx_temp = float(self.header["Ext. VI 3>STM Cx Temp (K)"])
+        Rx_temp = float(self.header["Ext. VI 3>STM Rx Temp (K)"])
         return_string = f"{self.filename}\n\nGate voltage = {gate_voltage} V\nSecond gate voltage = {second_gate_voltage} V\nLockin amplitude = {lockin_amplitude} (V)\nLockin frequency = {lockin_frequency} Hz\nLockin sensitivity = {lockin_sensitivity}\nLockin time constant = {lockin_time_constant}\nLockin phase = {lockin_phase}\nCx temperature = {Cx_temp}\nRx temperature = {Rx_temp}"
         copy_text_to_clipboard(return_string)
+
 
 # Loads and plots 3DS line cuts
 class Linecut(interactive_colorplot.Colorplot):
@@ -546,9 +653,9 @@ class Linecut(interactive_colorplot.Colorplot):
                 for site in range(self.n_positions)
             ]
         )
-        if normalize == 'integral':
+        if normalize == "integral":
             self.data = (self.data.T / np.sum(self.data, axis=-1)).T
-        elif normalize == 'max':
+        elif normalize == "max":
             self.data = (self.data.T / np.amax(self.data, axis=-1)).T
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
@@ -676,30 +783,35 @@ class Linecut(interactive_colorplot.Colorplot):
         return dbar
 
     def get_onenote_info_string(self) -> str:
-        '''
+        """
         Returns an info string to paste into your notes
-        '''
-        
+        """
+
         filename = self.nanonis_3ds.filename
         header = self.nanonis_3ds.header
 
         try:
-            gate_voltage = header['Ext. VI 1>Gate voltage (V)']
+            gate_voltage = header["Ext. VI 1>Gate voltage (V)"]
         except:
             second_gate_voltage = "Not recorded"
         try:
-            second_gate_voltage = header['Ext. VI 1>Second gate voltage (V)']
+            second_gate_voltage = header["Ext. VI 1>Second gate voltage (V)"]
         except:
             second_gate_voltage = "Not recorded"
 
-        bias_range_float = (float(header['Start Bias (V)']), float(header['End Bias (V)']))
+        bias_range_float = (
+            float(header["Start Bias (V)"]),
+            float(header["End Bias (V)"]),
+        )
         if np.abs(bias_range_float[0]) < 1 or np.abs(bias_range_float[1]) < 1:
             bias_range = f"{(round(bias_range_float[0]*1000, 2), round(bias_range_float[1]*1000, 2))} mV"
         else:
-            bias_range = f"{(round(bias_range_float[0], 2), round(bias_range_float[1], 2))} V"
+            bias_range = (
+                f"{(round(bias_range_float[0], 2), round(bias_range_float[1], 2))} V"
+            )
 
         try:
-            lockin_amplitude = (header['Ext. VI 2>Amplitude (V)'])
+            lockin_amplitude = header["Ext. VI 2>Amplitude (V)"]
         except:
             lockin_amplitude = "Not recorded"
         try:
@@ -707,20 +819,20 @@ class Linecut(interactive_colorplot.Colorplot):
         except:
             lockin_frequency = "Not recorded"
         try:
-            lockin_sensitivity = header['Ext. VI 2>Sensitivity']
+            lockin_sensitivity = header["Ext. VI 2>Sensitivity"]
         except:
             lockin_sensitivity = "Not recorded"
-        try: 
-            lockin_time_constant = header['Ext. VI 2>Time constant']
+        try:
+            lockin_time_constant = header["Ext. VI 2>Time constant"]
         except:
             lockin_time_constant = "Not recorded"
-        
+
         return f"{filename}\n\nGate voltage = {gate_voltage} V\nSecond gate = {second_gate_voltage} V\nBias range = {bias_range}\nLockin amplitude = {lockin_amplitude}\nLockin frequency = {lockin_frequency}\nLockin sensitivity = {lockin_sensitivity}\nLockin time constant = {lockin_time_constant}"
-        
+
     def copy_onenote_info_string(self):
-        '''
+        """
         Copies the string returned by get_onenote_info_string() onto the clipboard.
-        '''
+        """
         copy_text_to_clipboard(self.get_onenote_info_string())
 
 

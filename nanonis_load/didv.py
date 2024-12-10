@@ -2518,7 +2518,11 @@ class LineCutGateSweep:
         # Calculate the number of gate voltages
         # The fast sweeping axis is the gate voltage, so we find the index of the first
         # point that changes its x position and add one to get the number of gate voltages
-        self.num_gates = np.nonzero(xs[:-1] != xs[1:])[0][0] + 1
+        try:
+            self.num_gates = np.nonzero(xs[:-1] != xs[1:])[0][0] + 1
+        except IndexError:
+            self.num_gates = np.nonzero(ys[:-1] != ys[1:])[0][0] + 1
+
         self.gates = np.array([spectrum.gate for spectrum in self.spectra]).reshape(
             (-1, self.num_gates)
         )[0]
