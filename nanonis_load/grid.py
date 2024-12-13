@@ -232,6 +232,10 @@ class Grid:
         return np.array(self.nanonis_3ds.parameters["Z (m)"]).reshape(
             (self.y_pixels, self.x_pixels)
         )
+    
+    @property
+    def bias_range(self):
+        return abs(self.biases.max() - self.biases.min())
 
     def __eq__(self, other):
         return self.gate_voltage == other.gate_voltage
@@ -477,6 +481,8 @@ class Grid:
         verbose=False,
         full_output=True,
         break_on_exception=False,
+        real_space_blur=0,
+        energy_blur=0
     ):
         """
         Extract peak energy as a function of position in the grid
@@ -509,6 +515,10 @@ class Grid:
             Prints diagnostic information if true.
         full_output : bool
             Returns additional information such as peak indices.
+        real_space_blur : float
+            Radius in nm to apply Gaussian filter to the data before fitting.
+        energy_blur : float
+            Radius in V to apply Gaussian filter to the data before fitting.
 
         Returns
         -------
@@ -523,12 +533,15 @@ class Grid:
         peak_energies = np.zeros((self.y_pixels, self.x_pixels))
 
         last_peak_ind = 0  # Initalized for peak_tracking
+
+        filter_sigma = (real_space_blur / self.y_size * self.y_pixels, real_space_blur / self.x_size * self.x_pixels, energy_blur / self.bias_range * len(self.biases))
+        filtered_data = scipy.ndimage.gaussian_filter(self.data[channel], sigma=filter_sigma)
         # Loop through all spectrum and extract peaks
         for i in range(self.data[channel].shape[0]):
             for j in range(self.data[channel].shape[1]):
                 if i == 0 and j == 0 and skip_first_spectrum:
                     continue  # Skips fitting the first spectrum
-                spectrum = self.data[channel][i, j, :]
+                spectrum = filtered_data[i, j, :]
                 try:
                     peaks, properties = scipy.signal.find_peaks(
                         spectrum, prominence=prominence, width=width
