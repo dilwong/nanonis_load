@@ -95,6 +95,20 @@ class Spectrum:
         )
 
     @property
+    def gate_voltage(self):
+        try:
+            return float(self.header["Gate Voltage (V)"])
+        except KeyError:
+            return float(self.header["Ext. VI 1>Gate voltage (V)"])
+
+    @property
+    def second_gate(self):
+        try:
+            return float(self.header["Gate 2 (V)"])
+        except KeyError:
+            return float(self.header["Ext. VI 1>Second gate voltage (V)"])
+
+    @property
     def zero_bias_index(self):
         """
         Returns the index of smallest bias magnitude.
