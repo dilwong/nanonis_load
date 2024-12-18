@@ -134,6 +134,8 @@ class LinecutPlot:
         im_ylabel="y",
         linecut_xlabel="d",
         linecut_ylabel="z",
+        autoscale_x = False,
+        autoscale_y = True
     ):
         self.arr = arr
         if im_ax is None or linecut_ax is None:
@@ -148,7 +150,10 @@ class LinecutPlot:
         self.x_size = x_size if x_size is not None else arr.shape[-1]
         self.y_size = y_size if y_size is not None else arr.shape[0]
 
-        self.im = self.im_ax.imshow(arr, origin="lower", extent=(0, x_size, 0, y_size))
+        self.autoscale_x = autoscale_x
+        self.autoscale_y = autoscale_y
+
+        self.im = self.im_ax.imshow(arr, origin="lower", extent=(0, self.x_size, 0, self.y_size))
 
         self.p0 = np.array([0, 0])
         self.p1 = (
@@ -196,6 +201,11 @@ class LinecutPlot:
                 for line in self.linecut_plot:
                     line.remove()
             self.linecut_plot = self.linecut_ax.plot(x_data, y_data, color="#1f77b4")
+            if self.autoscale_x:
+                self.linecut_ax.set_xlim(0, x_data.max())
+            if self.autoscale_y:
+                range = abs(y_data.min() - y_data.max()) 
+                self.linecut_ax.set_ylim(y_data.min() - 0.1*range, y_data.max() + 0.1*range)
 
         update_linecut()
         self.fig.canvas.mpl_connect("button_press_event", on_press)
