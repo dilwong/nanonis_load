@@ -2640,6 +2640,10 @@ class LineCutGateSweep:
 
         return max(sweep_start, sweep_end)
 
+    @property
+    def bias(self):
+        return self.spectra[0].data["Bias calc (V)"].to_numpy()
+
     def create_movie(
         self,
         filename: str = "movie.mp4",
