@@ -1154,6 +1154,134 @@ class Colorplot(interactive_colorplot.Colorplot):
             colorbar=colorbar, tilt=self.state_for_update["tilt_by_bias"]
         )
 
+    def extract_peak_energies(self,
+        fit_radius=20,
+        prominence=0.1,
+        width=0,
+        std=0.002,
+        maxfev=1000,
+        bias_range =[-1000, 1000],
+        gate_range = [-1000,1000],
+        fallback="max",
+        peak_choosing_method="prominences",
+        skip_first_spectrum=False,
+        verbose=False,
+        sorting=False,
+        full_output=True,
+        break_on_exception=False,
+        energy_blur=0):
+
+        spectra = np.zeros((self.data.shape[0], self.data.shape[1]))
+        biases = self.bias
+        spectra = self.data
+
+        if sorting == True :
+             biases = np.flip(self.bias)
+             for i in range(self.data.shape[0]):
+                  spectra[i,:] = np.flip(self.data[i,:])
+
+        
+        def gaussian(x, x0, A, sigma, C):
+            return A * np.exp(-((x - x0) ** 2) / (2 * sigma**2)) + C
+    
+        bias_bin = (self.bias[-1]-self.bias[0])/(self.data.shape[1]-1)
+        start_bias_ind = np.where(biases >= bias_range[0])[0][0]
+        end_bias_ind = np.where(biases <= bias_range[1])[0][-1]
+        fit_bias = biases[start_bias_ind:end_bias_ind]
+
+        start_gate_ind = np.where(self.gate >= gate_range[0])[0][0]
+        end_gate_ind = np.where(self.gate <= gate_range[1])[0][-1]
+        
+        gate_range = self.gate[start_gate_ind:end_gate_ind+1]
+
+
+        peak_energies = np.zeros(len(gate_range))
+        peak_width = np.zeros(len(gate_range))
+
+
+        last_peak_ind = 0  # Initalized for peak_tracking
+
+        for i in range(start_gate_ind, end_gate_ind+1):
+            if i == 0 and skip_first_spectrum:
+                continue  # Skips fitting the first spectrum
+            
+            spectrum = spectra[i, start_bias_ind:end_bias_ind]
+            
+            try:
+                peaks, properties = scipy.signal.find_peaks(
+                spectrum, prominence=prominence, width=width
+                )
+
+                # Choose between peak choosing methods
+                if peak_choosing_method.lower() in ["track", "tracking"]:
+                    peak_ind = peaks[np.argmin(np.abs(peaks - last_peak_ind))]
+                elif peak_choosing_method.lower() in ["prominence", "prominences"]:
+                    peak_ind = peaks[np.argmax(properties["prominences"])]
+                elif peak_choosing_method.lower() == "min":
+                    peak_ind = np.amin(peaks)
+                elif peak_choosing_method.lower() == "max":
+                    peak_ind = np.amax(peaks)
+                else:
+                    raise ValueError(
+                        f"peak_choosing_method {peak_choosing_method} not recognized."
+                        )
+                
+            except ValueError as e:
+                    if verbose:
+                        print(e)
+                    peak_ind = np.argmax(spectrum)
+                    if break_on_exception:
+                        breakpoint()
+            
+            last_peak_ind = peak_ind
+            fit_start = peak_ind - fit_radius if peak_ind - fit_radius > 0 else 0
+            fit_end = (
+                    peak_ind + fit_radius
+                    if peak_ind + fit_radius < len(spectrum) - 1
+                    else len(spectrum) - 1
+                )
+
+            p0 = (fit_bias[peak_ind], spectrum[peak_ind], std, 0)
+
+            try:
+                fit, cov = scipy.optimize.curve_fit(
+                    gaussian,
+                    fit_bias[fit_start:fit_end],
+                    spectrum[fit_start:fit_end],
+                    p0,
+                    maxfev=maxfev,
+                    )
+                
+                if fit[0] < fit_bias.max() and fit[0] > fit_bias.min():
+                    peak_energies[i - start_gate_ind] = fit[0]
+                    peak_width[i - start_gate_ind] = 2.355*fit[2]
+                else :
+                    peak_energies[i - start_gate_ind] = fit_bias[np.argmax(spectrum)]
+                    peak_width[i - start_gate_ind] = 0
+        
+                  
+            except RuntimeError as e:
+                    print(
+                        f"Error fitting point ({i}). Falling back to {fallback}."
+                    )
+                    if verbose:
+                        print('vervose')
+                        print(e)
+                    if fallback == "max":
+                        print('max')
+                        peak_energies[i - start_gate_ind] = fit_bias[np.argmax(spectrum)]
+                        peak_width[i - start_gate_ind] = 0
+                    else:
+                        print('else')
+                        peak_energies[i - start_gate_ind] = fit_bias[peak_ind]
+                        peak_width[i - start_gate_ind] = 0
+
+        if skip_first_spectrum:
+            # Take average of neighboring points for first spectrum
+            peak_energies[0] = (peak_energies[1] + peak_energies[0]) / 2
+
+        return peak_energies, peak_width, gate_range, fit_bias
+
     # Finds peaks and clusters them according to DBSCAN algorithm with parameters eps and min_samples
     # sigma controls the Gaussian smoothing of each index line before finding the local maxima
     #
@@ -2521,7 +2649,7 @@ class LineCutGateSweep:
     """
 
     def __init__(
-        self, filenames: list[str], root_dir: str = "", slider_axis: str = "gate"
+        self, filenames: list[str], root_dir: str = "", slider_axis: str = "gate", normalize = False
     ):
         self.spectra = [Spectrum(root_dir + file) for file in filenames]
         self.slider_axis = slider_axis
@@ -2549,6 +2677,15 @@ class LineCutGateSweep:
         )
         self.data = data.reshape((self.num_pos, self.num_gates, -1))
 
+        if normalize == "integral":
+             for i in range(self.num_pos):
+                 for j in range(self.num_gates):
+                     self.data[i,j,:] = self.data[i,j,:] / np.sum(self.data[i,j,:], axis = -1)
+        elif normalize == "max":
+             for i in range(self.num_pos):
+                 for j in range(self.num_gates):
+                     self.data[i,j,:] = self.data[i,j,:] / np.amax(self.data[i,j,:], axis = -1)
+
         # Total length of linecut
         self.distance = np.hypot(xs[-1] - xs[0], ys[-1] - ys[0])
 
@@ -2556,7 +2693,7 @@ class LineCutGateSweep:
         self.fig.subplots_adjust(bottom=0.25)
 
         self.slider_ax = self.fig.add_axes([0.25, 0.1, 0.65, 0.03])
-        if slider_axis == "gate":
+        if slider_axis == "gate":     
             self.slider = matplotlib.widgets.Slider(
                 ax=self.slider_ax,
                 label="Gate voltage (V)",

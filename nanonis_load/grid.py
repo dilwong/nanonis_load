@@ -243,7 +243,7 @@ class Grid:
     def __lt__(self, other):
         return self.gate_voltage < other.gate_voltage
 
-    def plot(self, channel="Input 2 (V)"):
+    def plot(self, sweep_index=0, channel="Input 2 (V)"):
         # Create axes for plotting
         if self.fft:
             self.fig = plt.figure(figsize=[2 * 6.4, 4.8])
@@ -264,7 +264,7 @@ class Grid:
 
         # Plot grid
         self.im = self.plot_ax.imshow(
-            np.flipud(self.data[channel][:, :, 0]),
+            np.flipud(self.data[channel][:, :, sweep_index]),
             extent=(0, self.header["x_size (nm)"], 0, self.header["y_size (nm)"]),
             cmap="Blues_r",
         )  # Check to make sure x_size and y_size aren't mixed up
@@ -306,7 +306,7 @@ class Grid:
         self.plot_ax.set_ylabel("Y (nm)")
         self.colorbar = self.fig.colorbar(self.im, ax=self.plot_ax)
         self.free = 0
-        title = "Energy = " + str(self.biases[self.free]) + " eV"
+        title = "Energy = " + str(round(self.biases[sweep_index],4)) + " eV"
         self.plot_ax.set_title(title)
 
         def update_linecut():
