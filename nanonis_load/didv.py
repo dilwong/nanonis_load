@@ -1169,7 +1169,11 @@ class Colorplot(interactive_colorplot.Colorplot):
         pairs = []
         mod_pairs = []
         for idx in range(self.data.shape[0 if self.transpose else 1]):
-            smoothed = gaussian_filter1d(self.data[:, idx], sigma)
+            smoothed = (
+                gaussian_filter1d(self.data[:, idx], sigma)
+                if not self.transpose
+                else gaussian_filter1d(self.data[idx, :], sigma)
+            )
             maxargs = argrelextrema(smoothed, np.greater)[0]
             for maxarg in maxargs:
                 lpts_bias.append(self.bias[maxarg])
@@ -1187,7 +1191,11 @@ class Colorplot(interactive_colorplot.Colorplot):
                     yg = self.gate[pairs[index][1]]
                     points_list.append([xb, yg])
                     x, y = zip(*points_list)
-                    self.ax.scatter(x, y, s=0.2)
+                    if not self.transpose:
+                        self.ax.scatter(x, y, s=0.2, c="black")
+                    else:
+                        self.ax.scatter(y, x, s=0.2, c="black")
+
         self._peak_pairs = pairs
         self._peak_cluster_labels = label_list
 
