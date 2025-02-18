@@ -2070,7 +2070,7 @@ class Colorplot(interactive_colorplot.Colorplot):
                     print("Error: Python version is below 3.7.")
                     return
                 index = ind["ind"][0]
-                image_sxm = sxm.sxm(
+                image_sxm = sxm.Sxm(
                     self.img_data_points[list(self.img_data_points.keys())[index]]
                 )
                 x_range = image_sxm.header["x_range (nm)"]

@@ -232,7 +232,7 @@ class Grid:
         return np.array(self.nanonis_3ds.parameters["Z (m)"]).reshape(
             (self.y_pixels, self.x_pixels)
         )
-    
+
     @property
     def bias_range(self):
         return abs(self.biases.max() - self.biases.min())
@@ -306,7 +306,7 @@ class Grid:
         self.plot_ax.set_ylabel("Y (nm)")
         self.colorbar = self.fig.colorbar(self.im, ax=self.plot_ax)
         self.free = 0
-        title = "Energy = " + str(round(self.biases[sweep_index],4)) + " eV"
+        title = "Energy = " + str(round(self.biases[sweep_index], 4)) + " eV"
         self.plot_ax.set_title(title)
 
         def update_linecut():
@@ -482,7 +482,7 @@ class Grid:
         full_output=True,
         break_on_exception=False,
         real_space_blur=0,
-        energy_blur=0
+        energy_blur=0,
     ):
         """
         Extract peak energy as a function of position in the grid
@@ -534,8 +534,14 @@ class Grid:
 
         last_peak_ind = 0  # Initalized for peak_tracking
 
-        filter_sigma = (real_space_blur / self.y_size * self.y_pixels, real_space_blur / self.x_size * self.x_pixels, energy_blur / self.bias_range * len(self.biases))
-        filtered_data = scipy.ndimage.gaussian_filter(self.data[channel], sigma=filter_sigma)
+        filter_sigma = (
+            real_space_blur / self.y_size * self.y_pixels,
+            real_space_blur / self.x_size * self.x_pixels,
+            energy_blur / self.bias_range * len(self.biases),
+        )
+        filtered_data = scipy.ndimage.gaussian_filter(
+            self.data[channel], sigma=filter_sigma
+        )
         # Loop through all spectrum and extract peaks
         for i in range(self.data[channel].shape[0]):
             for j in range(self.data[channel].shape[1]):
@@ -722,7 +728,7 @@ class Linecut(interactive_colorplot.Colorplot):
             import sxm
 
         self.sxm_data = sxm.sxm(filename)
-        self.sxm_fig = sxm.plot(
+        self.sxm_fig = sxm.Plot(
             self.sxm_data, "Z (m)", flatten=flatten, subtract_plane=subtract_plane
         )
 
