@@ -178,6 +178,7 @@ class Grid:
         transform=None,
         energy_smoothing=None,
         plot=False,
+        test =False
     ):
         """ """
         self.nanonis_3ds = Nanonis3ds(filename)
@@ -200,6 +201,13 @@ class Grid:
         self._nanonis_3ds = self.nanonis_3ds
 
         self.auto_contrast = True
+
+    def get_lockin_calibration_factor(self, lockin_channel: str = "Input 2 (V)" ) -> float:
+        return np.linalg.lstsq(
+                self.data['Input 2 (V)'][0][0][:, np.newaxis],
+                np.gradient(self.data["Current (A)"][0][0], self.biases),
+                rcond=None,
+            )[0]
 
     @property
     def gate_voltage(self):
@@ -295,6 +303,8 @@ class Grid:
             self.plot_ax = self.fig.add_subplot(121)
             self.linecut_ax = self.fig.add_subplot(122)  # Axes for linecut through grid
             self.linecut_ax.set_aspect("auto")
+            plt.subplots_adjust(wspace=0.3)
+
 
         # Plot grid
         self.im = self.plot_ax.imshow(
@@ -319,7 +329,7 @@ class Grid:
             self.fft_plot = None
 
         # Line representing the linecut will be drawn here
-        self.linecut_line = matplotlib.lines.Line2D([0, 0], [0, 0], color="r")
+        self.linecut_line = matplotlib.lines.Line2D([0, 0], [0, 0], color="r", linewidth = 3)
         self.plot_ax.add_line(self.linecut_line)
         # Empty linecut plot as placeholder first
         self.linecut_plot = self.linecut_ax.imshow(
@@ -340,7 +350,7 @@ class Grid:
         self.plot_ax.set_ylabel("Y (nm)")
         self.colorbar = self.fig.colorbar(self.im, ax=self.plot_ax)
         self.free = 0
-        title = "Energy = " + str(round(self.biases[sweep_index], 4)) + " eV"
+        title = "Energy = " + str(round(self.biases[sweep_index] * 1000, 4)) + "meV"
         self.plot_ax.set_title(title)
 
         def update_linecut():
