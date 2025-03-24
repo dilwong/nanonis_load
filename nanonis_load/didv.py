@@ -611,6 +611,8 @@ class Colorplot(interactive_colorplot.Colorplot):
         tilt_by_bias : bool
             If True, plot gate voltage - sample bias on the y-axis instead of just the
             gate voltage.
+        calibrate_didv : bool
+            If True, data will be scaled by a calibration factor to give units in nS.
 
     Attributes:
         fig : matplotlib.figure.Figure
@@ -662,6 +664,7 @@ class Colorplot(interactive_colorplot.Colorplot):
         axes = kwargs["axes"] if ("axes" in kwargs) else None
         self.over_iv = kwargs["over_iv"] if ("over_iv" in kwargs) else None
         self.multiply = kwargs["multiply"] if ("multiply" in kwargs) else None
+        self.calibrate_didv = kwargs["calibrate_didv"] if ("calibrate_didv" in kwargs) else False
         gate_as_index = kwargs["gate_as_index"] if ("gate_as_index" in kwargs) else True
         double_lockin = (
             kwargs["double_lockin"] if ("double_lockin" in kwargs) else False
@@ -839,6 +842,9 @@ class Colorplot(interactive_colorplot.Colorplot):
             self.data = (
                 self.data / self.current * (self.bias[:, np.newaxis] - self.over_iv[1])
             )
+        if self.calibrate_didv:
+            self.data *= self.spectra_list[0].get_lockin_calibration_factor() * 1e9
+
         if (
             over_current is not None
         ):  # Do not use over_iv and over_current at the same time!!
@@ -883,6 +889,7 @@ class Colorplot(interactive_colorplot.Colorplot):
         self.original_cmap = self.pcolor.cmap
         if colorbar:
             self.colorbar = self.fig.colorbar(self.pcolor, ax=self.ax)
+            self.colorbar.set_label('dI/dV (a.u.)' if not self.calibrate_didv else 'dI/dV (nS)')
         if not self.transpose:
             self.ax.set_xlabel("Sample Bias (V)")
             self.ax.set_ylabel(index_label)
@@ -2704,6 +2711,9 @@ class LineCutGateSweep:
                         self.data[i, j, :], axis=-1
                     )
 
+        if self.bias[0] > self.bias[-1]:
+            self.data = np.flip(self.data, axis=-1)
+
         # Total length of linecut
         self.distance = np.hypot(xs[-1] - xs[0], ys[-1] - ys[0])
 
@@ -2805,6 +2815,7 @@ class LineCutGateSweep:
         interval: int = 50,
         blit: bool = True,
         vmax: float = None,
+        dark = False
     ):
         """
         Creates an animation along the slider axis.
@@ -2821,10 +2832,17 @@ class LineCutGateSweep:
 
         """
         fig, ax = plt.subplots()
-        ax.set_ylabel("Bias (mV)")
-        frames = []
+        ax.tick_params(axis='x', labelsize=15)
+        ax.tick_params(axis='y', labelsize=15)
+        ax.set_ylabel("Bias (mV)", fontsize = 15)
+
+        if dark == True :
+            plt.style.use("dark_background")
+
+        frames = [] 
+
         if self.slider_axis == "gate":
-            ax.set_xlabel("Distance (nm)")
+            ax.set_xlabel("Distance (nm)", fontsize = 15)
             for i in range(self.num_gates):
                 im = ax.imshow(
                     self.data[:, i, :].T,
@@ -2864,7 +2882,7 @@ class LineCutGateSweep:
                 text = plt.text(
                     0.5,
                     1.05,
-                    f"Distance = {np.linspace(0, self.distance, self.num_pos)[i]}",
+                    f"Distance = {np.round(np.linspace(0, self.distance, self.num_pos)[i], 3)} nm",
                     fontsize=20,
                     horizontalalignment="center",
                     transform=ax.transAxes,
