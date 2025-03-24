@@ -900,7 +900,7 @@ class Plot:
         channel: str,
         direction: int = 0,
         flatten: bool = False,
-        subtract_plane: bool = True,
+        subtract_plane: bool = False,
         cmap=util.get_w_cmap(),
         rasterized=True,
     ):
@@ -910,7 +910,7 @@ class Plot:
         image_data = np.copy(sxm_data.data[channel][direction])
         avg_dat = image_data[~np.isnan(image_data)].mean()
         image_data[np.isnan(image_data)] = avg_dat
-        if (flatten == True) and (subtract_plane == False):
+        if (flatten) and (subtract_plane == False):
             image_data = scipy.signal.detrend(image_data)
 
         # Flip upside down if image was taken scanning down

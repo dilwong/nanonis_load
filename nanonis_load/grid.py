@@ -211,6 +211,23 @@ class Grid:
         return float(self.header["x_size (nm)"])
 
     @property
+    def x_center(self):
+        """Returns the center x coordinate in nm."""
+        return self.header["x_center (nm)"]
+
+    @property
+    def xlist(self):
+        """Returns a list of the x-coordinates (in nm) where data is taken."""
+        x_center = self.header["x_center (nm)"]
+        return np.linspace(
+            x_center - self.x_size / 2, x_center + self.x_size / 2, self.x_pixels
+        )
+
+    @property
+    def x_coords(self):
+        return self.xlist
+
+    @property
     def x_pixels(self):
         """Returns the number of pixels in the x direction."""
         return int(self.header["x_pixels"])
@@ -221,9 +238,26 @@ class Grid:
         return float(self.header["y_size (nm)"])
 
     @property
+    def y_center(self):
+        """Returns the center y coordinate in nm."""
+        return self.header["y_center (nm)"]
+
+    @property
     def y_pixels(self):
         """Returns the number of pixels in the y direction."""
         return int(self.header["y_pixels"])
+
+    @property
+    def ylist(self):
+        """Returns a list of the y-coordinates (in nm) where data is taken."""
+        y_center = self.header["y_center (nm)"]
+        return np.linspace(
+            y_center - self.y_size / 2, y_center + self.y_size / 2, self.y_pixels
+        )
+
+    @property
+    def y_coords(self):
+        return self.ylist
 
     @property
     def Z(self):
