@@ -664,7 +664,9 @@ class Colorplot(interactive_colorplot.Colorplot):
         axes = kwargs["axes"] if ("axes" in kwargs) else None
         self.over_iv = kwargs["over_iv"] if ("over_iv" in kwargs) else None
         self.multiply = kwargs["multiply"] if ("multiply" in kwargs) else None
-        self.calibrate_didv = kwargs["calibrate_didv"] if ("calibrate_didv" in kwargs) else False
+        self.calibrate_didv = (
+            kwargs["calibrate_didv"] if ("calibrate_didv" in kwargs) else False
+        )
         gate_as_index = kwargs["gate_as_index"] if ("gate_as_index" in kwargs) else True
         double_lockin = (
             kwargs["double_lockin"] if ("double_lockin" in kwargs) else False
@@ -889,7 +891,9 @@ class Colorplot(interactive_colorplot.Colorplot):
         self.original_cmap = self.pcolor.cmap
         if colorbar:
             self.colorbar = self.fig.colorbar(self.pcolor, ax=self.ax)
-            self.colorbar.set_label('dI/dV (a.u.)' if not self.calibrate_didv else 'dI/dV (nS)')
+            self.colorbar.set_label(
+                "dI/dV (a.u.)" if not self.calibrate_didv else "dI/dV (nS)"
+            )
         if not self.transpose:
             self.ax.set_xlabel("Sample Bias (V)")
             self.ax.set_ylabel(index_label)
@@ -2815,7 +2819,7 @@ class LineCutGateSweep:
         interval: int = 50,
         blit: bool = True,
         vmax: float = None,
-        dark = False
+        dark=False,
     ):
         """
         Creates an animation along the slider axis.
@@ -2832,17 +2836,17 @@ class LineCutGateSweep:
 
         """
         fig, ax = plt.subplots()
-        ax.tick_params(axis='x', labelsize=15)
-        ax.tick_params(axis='y', labelsize=15)
-        ax.set_ylabel("Bias (mV)", fontsize = 15)
+        ax.tick_params(axis="x", labelsize=15)
+        ax.tick_params(axis="y", labelsize=15)
+        ax.set_ylabel("Bias (mV)", fontsize=15)
 
-        if dark == True :
+        if dark == True:
             plt.style.use("dark_background")
 
-        frames = [] 
+        frames = []
 
         if self.slider_axis == "gate":
-            ax.set_xlabel("Distance (nm)", fontsize = 15)
+            ax.set_xlabel("Distance (nm)", fontsize=15)
             for i in range(self.num_gates):
                 im = ax.imshow(
                     self.data[:, i, :].T,
@@ -3645,3 +3649,9 @@ def quick_landau_fan(
         normalize=normalize,
     )
     return fan
+
+
+class DualGate:
+    """
+    Load and plot dual gate STS data
+    """

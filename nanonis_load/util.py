@@ -1,5 +1,6 @@
 """
-This file will contain miscellaneous functions that might be useful elsewhere in the package.
+This file will contain miscellaneous functions and classes that might 
+be useful elsewhere in the package.
 """
 
 import os
@@ -12,6 +13,7 @@ import scipy.interpolate
 
 
 def copy_text_to_clipboard(text: str):
+    """Copies text to the system clipboard."""
     r = Tk()
     r.withdraw()
     r.clipboard_clear()
@@ -114,6 +116,29 @@ def get_w_cmap():
 
 
 def linecut(arr: np.ndarray, i0: int, i1: int, j0: int, j1: int) -> np.ndarray:
+    """
+    Performs a linecut of a numpy array across a pair of starting and ending
+    indices.
+
+    Parameters
+    ----------
+    arr : ndarray
+        The array to compute a linecut of.
+    i0 : int
+        First index of the initial point.
+    i1 : int
+        First index of the final point.
+    j0 : int
+        Second index of the initial point.
+    j1 : int
+        Second index of the final point.
+
+    Returns
+    -------
+    result : ndarray
+        The resulting linecut.
+
+    """
     num_pts = int(np.hypot(i0 - i1, j0 - j1))
     i, j = np.linspace(i0, i1, num_pts), np.linspace(j0, j1, num_pts)
     return arr[i.astype(int), j.astype(int)]
@@ -134,8 +159,8 @@ class LinecutPlot:
         im_ylabel="y",
         linecut_xlabel="d",
         linecut_ylabel="z",
-        autoscale_x = False,
-        autoscale_y = True
+        autoscale_x=False,
+        autoscale_y=True,
     ):
         self.arr = arr
         if im_ax is None or linecut_ax is None:
@@ -153,7 +178,9 @@ class LinecutPlot:
         self.autoscale_x = autoscale_x
         self.autoscale_y = autoscale_y
 
-        self.im = self.im_ax.imshow(arr, origin="lower", extent=(0, self.x_size, 0, self.y_size))
+        self.im = self.im_ax.imshow(
+            arr, origin="lower", extent=(0, self.x_size, 0, self.y_size)
+        )
 
         self.p0 = np.array([0, 0])
         self.p1 = (
@@ -204,10 +231,11 @@ class LinecutPlot:
             if self.autoscale_x:
                 self.linecut_ax.set_xlim(0, x_data.max())
             if self.autoscale_y:
-                range = abs(y_data.min() - y_data.max()) 
-                self.linecut_ax.set_ylim(y_data.min() - 0.1*range, y_data.max() + 0.1*range)
+                range = abs(y_data.min() - y_data.max())
+                self.linecut_ax.set_ylim(
+                    y_data.min() - 0.1 * range, y_data.max() + 0.1 * range
+                )
 
         update_linecut()
         self.fig.canvas.mpl_connect("button_press_event", on_press)
         self.fig.canvas.mpl_connect("motion_notify_event", on_motion)
-

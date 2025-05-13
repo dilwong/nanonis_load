@@ -178,7 +178,7 @@ class Grid:
         transform=None,
         energy_smoothing=None,
         plot=False,
-        test =False
+        test=False,
     ):
         """ """
         self.nanonis_3ds = Nanonis3ds(filename)
@@ -202,12 +202,24 @@ class Grid:
 
         self.auto_contrast = True
 
-    def get_lockin_calibration_factor(self, lockin_channel: str = "Input 2 (V)" ) -> float:
+    def get_lockin_calibration_factor(
+        self, lockin_channel: str = "Input 2 (V)"
+    ) -> float:
         return np.linalg.lstsq(
-                self.data['Input 2 (V)'][0][0][:, np.newaxis],
-                np.gradient(self.data["Current (A)"][0][0], self.biases),
-                rcond=None,
-            )[0]
+            self.data["Input 2 (V)"][0][0][:, np.newaxis],
+            np.gradient(self.data["Current (A)"][0][0], self.biases),
+            rcond=None,
+        )[0]
+
+    def __getitem__(self, index):
+        if isinstance(index, float):
+            bias_index = np.argmin(np.abs(self.biases - index))
+        elif isinstance(index, int):
+            bias_index = index
+        try:
+            return self.data["Input 2 (V)"][:, :, bias_index]
+        except KeyError:
+            return self.data["Current (A)"][:, :, bias_index]
 
     @property
     def gate_voltage(self):
@@ -305,7 +317,6 @@ class Grid:
             self.linecut_ax.set_aspect("auto")
             plt.subplots_adjust(wspace=0.3)
 
-
         # Plot grid
         self.im = self.plot_ax.imshow(
             np.flipud(self.data[channel][:, :, sweep_index]),
@@ -329,7 +340,9 @@ class Grid:
             self.fft_plot = None
 
         # Line representing the linecut will be drawn here
-        self.linecut_line = matplotlib.lines.Line2D([0, 0], [0, 0], color="r", linewidth = 3)
+        self.linecut_line = matplotlib.lines.Line2D(
+            [0, 0], [0, 0], color="r", linewidth=3
+        )
         self.plot_ax.add_line(self.linecut_line)
         # Empty linecut plot as placeholder first
         self.linecut_plot = self.linecut_ax.imshow(
