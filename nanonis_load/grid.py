@@ -211,21 +211,6 @@ class Grid:
             rcond=None,
         )[0]
 
-    def __getitem__(self, index):
-        """
-        Returns a bias slice of the data. If index is a float, the slice with the bias
-        closest to index will be chosen. If index is an int, it is the index of the
-        chosen slice.
-        """
-        if isinstance(index, float):
-            bias_index = np.argmin(np.abs(self.biases - index))
-        elif isinstance(index, int):
-            bias_index = index
-        try:
-            return self.data["Input 2 (V)"][:, :, bias_index]
-        except KeyError:
-            return self.data["Current (A)"][:, :, bias_index]
-
     @property
     def gate_voltage(self):
         return float(self.header["Ext. VI 1>Gate voltage (V)"])
@@ -305,6 +290,10 @@ class Grid:
 
     def __lt__(self, other):
         return self.gate_voltage < other.gate_voltage
+
+    def bias_slice(self, bias: float, channel="Input 2 (V)"):
+        bias_index = np.argmin(np.abs(self.biases - bias))
+        return self.data[channel][:, :, bias_index]
 
     def plot(self, sweep_index=0, channel="Input 2 (V)"):
         # Create axes for plotting
