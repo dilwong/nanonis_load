@@ -212,6 +212,11 @@ class Grid:
         )[0]
 
     def __getitem__(self, index):
+        """
+        Returns a bias slice of the data. If index is a float, the slice with the bias
+        closest to index will be chosen. If index is an int, it is the index of the
+        chosen slice.
+        """
         if isinstance(index, float):
             bias_index = np.argmin(np.abs(self.biases - index))
         elif isinstance(index, int):
@@ -224,6 +229,10 @@ class Grid:
     @property
     def gate_voltage(self):
         return float(self.header["Ext. VI 1>Gate voltage (V)"])
+
+    @property
+    def second_gate(self):
+        return float(self.header["Ext. VI 1>Second gate voltage (V)"])
 
     @property
     def x_size(self):
