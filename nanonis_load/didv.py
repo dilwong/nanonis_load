@@ -24,6 +24,7 @@ p.drag_bar(direction = 'v' or 'h', locator = False).
 
 import ast
 import glob
+import itertools
 import os
 import re
 import sys
@@ -35,6 +36,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.integrate
+import scipy.interpolate
 import scipy.ndimage
 from matplotlib import cm
 
@@ -3655,3 +3657,63 @@ class DualGate:
     """
     Load and plot dual gate STS data
     """
+
+    def __init__(self, files: list[str]):
+        """
+        Parameters
+        ----------
+        filenames : List[str]
+            A list of filenames to open.
+        """
+        if isinstance(files[0], str):
+            self.spectra = [Spectrum(filename) for filename in files]
+        elif isinstance(files[0], Spectrum):
+            self.spectra = files
+        else:
+            raise TypeError(f"Elements in files are of invalid type {type(files[0])}")
+        self.current = np.array(
+            [spectrum.data["Current (A)"] for spectrum in self.spectra]
+        )
+        self.Z = np.array(
+            [float(spectrum.header["Z (m)"]) for spectrum in self.spectra]
+        )
+        self.V_g1 = np.array([spectrum.gate_voltage for spectrum in self.spectra])
+        self.V_g2 = np.array([spectrum.second_gate for spectrum in self.spectra])
+
+    def plot_gap_sizes(
+        self, current_threshold=2e-12, fig=None, ax=None, scale_V_g2=1000
+    ):
+        gap_sizes = np.array(
+            [
+                spectrum.get_gap_size(current_threshold=current_threshold)
+                for spectrum in self.spectra
+            ]
+        )
+        unique_V_g1 = np.array(sorted(list(set(self.V_g1))))
+        unique_V_g2 = np.array(sorted(list(set(self.V_g2))))
+        pairs = list(itertools.product(unique_V_g2, unique_V_g1))
+        unique_pairs = sorted(list(set(pairs)))
+
+        interp = scipy.interpolate.griddata(
+            np.c_[self.V_g2, self.V_g1],
+            gap_sizes,
+            unique_pairs,
+            method="nearest",
+            rescale=True,
+        )
+
+        if fig is None or ax is None:
+            fig, ax = plt.subplots()
+
+        gap_map = plt.pcolormesh(
+            sorted(unique_V_g1),
+            sorted(unique_V_g2 * scale_V_g2),
+            interp.reshape(-1, len(unique_V_g1)),
+            shading="nearest",
+            cmap="RdBu_r",
+        )
+        colorbar = fig.colorbar(gap_map)
+        ax.set_xlabel("$V_{g1}$ (V)")
+        ax.set_ylabel("$V_{g2}$ (mV)" if scale_V_g2 != 1 else "$V_{g2}$ (V)")
+
+        return gap_map, fig, ax
