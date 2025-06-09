@@ -817,6 +817,7 @@ class Grid:
         energy_smoothing=None,
         plot=False,
         test=False,
+        comparison_mode="gate",
     ):
         """ """
         self.nanonis_3ds = Nanonis3ds(filename)
@@ -839,6 +840,7 @@ class Grid:
         self._nanonis_3ds = self.nanonis_3ds
 
         self.auto_contrast = True
+        self.comparison_mode = comparison_mode
 
     def get_lockin_calibration_factor(
         self, lockin_channel: str = "Input 2 (V)"
@@ -924,10 +926,20 @@ class Grid:
         return abs(self.biases.max() - self.biases.min())
 
     def __eq__(self, other):
-        return self.gate_voltage == other.gate_voltage
+        if self.comparison_mode == "gate":
+            return self.gate_voltage == other.gate_voltage
+        elif self.comparison_mode == "second_gate":
+            return self.second_gate == other.second_gate
+        else:
+            raise ValueError(f"{self.comparison_mode} is not a valid comparison mode.")
 
     def __lt__(self, other):
-        return self.gate_voltage < other.gate_voltage
+        if self.comparison_mode == "gate":
+            return self.gate_voltage < other.gate_voltage
+        elif self.comparison_mode == "second_gate":
+            return self.second_gate < other.second_gate
+        else:
+            raise ValueError(f"{self.comparison_mode} is not a valid comparison mode.")
 
     def bias_slice(self, bias: float, channel="Input 2 (V)"):
         bias_index = np.argmin(np.abs(self.biases - bias))
