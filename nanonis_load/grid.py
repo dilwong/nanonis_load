@@ -136,7 +136,7 @@ class Nanonis3ds:
             )
 
 
-class Gridtest_0608 :
+class Grid :
 
 
     def __init__(
@@ -737,6 +737,147 @@ class Gridtest_0608 :
         ax.plot(self.biases, self.data[channel][i, j, :])
 
         return fig, ax
+
+    def extract_peak_energies(
+        self,
+        channel="Input 2 (V)",
+        fit_radius=5,
+        prominence=0.1,
+        width=0,
+        std=0.002,
+        maxfev=1000,
+        fallback="max",
+        peak_choosing_method="prominences",
+        skip_first_spectrum=False,
+        verbose=False,
+        full_output=True,
+        break_on_exception=False,
+        real_space_blur=0,
+        energy_blur=0,
+    ):
+        """
+        Extract peak energy as a function of position in the grid
+
+        Parameters
+        ----------
+        channel : str
+            The data channel to do peak energy extraction on.
+        fit_radius : int
+            The radius of the range of points to do Gaussian fitting on.
+            Default is 5.
+        prominence : float
+            Peak prominence used in scipy.signal.find_peaks().
+        width : int
+            Peak width used in scipy.signal.find_peaks().
+        std : float
+            Standard deviation used in the initial guess for Gaussian fitting.
+        maxfev : int
+            Maximum number of function evaluations used in scipy.optimize.curve_fit().
+        fallback : {'max', 'peak_ind'}
+            Method of peak finding used if Gaussian fitting fails
+            'max': Uses the bias of the maximum value in the spectrum
+        peak_choosing_method : {'tracking', 'prominence', 'min', 'max'}
+            The method for choosing between several peaks that
+            scipy.signal.find_peaks() finds.
+        skip_first_spectrum : bool
+            Whether or not to skip the first spectrum. If skipped, will take average
+            of two neighboring peak energies.
+        verbose : bool
+            Prints diagnostic information if true.
+        full_output : bool
+            Returns additional information such as peak indices.
+        real_space_blur : float
+            Radius in nm to apply Gaussian filter to the data before fitting.
+        energy_blur : float
+            Radius in V to apply Gaussian filter to the data before fitting.
+
+        Returns
+        -------
+        peak_energies : ndarray
+            Numpy array of peak energies extracted from each spectrum.
+        """
+
+        # Define gaussian for fitting
+        def gaussian(x, x0, A, sigma, C):
+            return A * np.exp(-((x - x0) ** 2) / (2 * sigma**2)) + C
+
+        peak_energies = np.zeros((self.y_pixels, self.x_pixels))
+
+        last_peak_ind = 0  # Initalized for peak_tracking
+
+        filter_sigma = (
+            real_space_blur / self.y_size * self.y_pixels,
+            real_space_blur / self.x_size * self.x_pixels,
+            energy_blur / self.bias_range * len(self.biases),
+        )
+        filtered_data = scipy.ndimage.gaussian_filter(
+            self.data[channel], sigma=filter_sigma
+        )
+        # Loop through all spectrum and extract peaks
+        for i in range(self.data[channel].shape[0]):
+            for j in range(self.data[channel].shape[1]):
+                if i == 0 and j == 0 and skip_first_spectrum:
+                    continue  # Skips fitting the first spectrum
+                spectrum = filtered_data[i, j, :]
+                try:
+                    peaks, properties = scipy.signal.find_peaks(
+                        spectrum, prominence=prominence, width=width
+                    )
+
+                    # Choose between peak choosing methods
+                    if peak_choosing_method.lower() in ["track", "tracking"]:
+                        peak_ind = peaks[np.argmin(np.abs(peaks - last_peak_ind))]
+                    elif peak_choosing_method.lower() in ["prominence", "prominences"]:
+                        peak_ind = peaks[np.argmax(properties["prominences"])]
+                    elif peak_choosing_method.lower() == "min":
+                        peak_ind = np.amin(peaks)
+                    elif peak_choosing_method.lower() == "max":
+                        peak_ind = np.amax(peaks)
+                    else:
+                        raise ValueError(
+                            f"peak_choosing_method {peak_choosing_method} not recognized."
+                        )
+                except ValueError as e:
+                    if verbose:
+                        print(e)
+                    peak_ind = np.argmax(spectrum)
+                    if break_on_exception:
+                        breakpoint()
+                last_peak_ind = peak_ind
+                fit_start = peak_ind - fit_radius if peak_ind - fit_radius > 0 else 0
+                fit_end = (
+                    peak_ind + fit_radius
+                    if peak_ind + fit_radius < self.header["points"]
+                    else self.header["points"]
+                )
+
+                p0 = (self.biases[peak_ind], spectrum[peak_ind], std, 0)
+
+                try:
+                    fit, cov = scipy.optimize.curve_fit(
+                        gaussian,
+                        self.biases[fit_start:fit_end],
+                        spectrum[fit_start:fit_end],
+                        p0,
+                        maxfev=maxfev,
+                    )
+                    peak_energies[i, j] = fit[0]
+                except RuntimeError as e:
+                    print(
+                        f"Error fitting point ({i}, {j}). Falling back to {fallback}."
+                    )
+                    if verbose:
+                        print(e)
+                    if fallback == "max":
+                        peak_energies[i, j] = self.biases[np.argmax(spectrum)]
+                    else:
+                        peak_energies[i, j] = self.biases[peak_ind]
+
+        if skip_first_spectrum:
+            # Take average of neighboring points for first spectrum
+            peak_energies[0, 0] = (peak_energies[1, 0] + peak_energies[0, 1]) / 2
+
+        return peak_energies
     
     # TO DO : merge with 'extract_peak_energies'
     # we don't need 'animate' function
@@ -775,7 +916,7 @@ class Gridtest_0608 :
 
 
 # TO DO: Copy data to clipboard
-class Grid:
+class older_Grid :
     r"""
     Plots the 2D grid spectroscopy data.
     Press the keyboard arrow keys (UP and DOWN) to change the bias/energy of the image.
