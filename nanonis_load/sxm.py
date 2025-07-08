@@ -106,6 +106,8 @@ class Sxm:
         size = self.header["x_pixels"] * self.header["y_pixels"]
         raw_data = np.frombuffer(raw_data, dtype=">f")
 
+        self.comparison_mode = "gate"
+
         if self.header["direction"] == "down":
             for idx, channel_name in enumerate(self.header["channels"]):
                 channel_data = raw_data[idx * size * 2 : (idx + 1) * size * 2]
@@ -147,6 +149,22 @@ class Sxm:
                         )
                     )
                 )  # Backward channel
+
+    def __eq__(self, o):
+        if self.comparison_mode == "gate":
+            return self.gate_voltage == other.gate_voltage
+        elif self.comparison_mode == "second_gate":
+            return self.second_gate == other.second_gate
+        else:
+            raise ValueError(f"{self.comparison_mode} is not a valid comparison mode.")
+
+    def __lt__(self, other):
+        if self.comparison_mode == "gate":
+            return self.gate_voltage < other.gate_voltage
+        elif self.comparison_mode == "second_gate":
+            return self.second_gate < other.second_gate
+        else:
+            raise ValueError(f"{self.comparison_mode} is not a valid comparison mode.")
 
     def get_filename(self) -> str:
         """
@@ -230,6 +248,14 @@ class Sxm:
     @property
     def gate(self):
         return self.get_gate_voltage()
+
+    @property
+    def gate_voltage(self):
+        return self.get_gate_voltage()
+
+    @property
+    def second_gate(self):
+        return float(self.header[":Ext. VI 1>Second gate voltage (V):"][0])
 
     @property
     def x_range(self):
