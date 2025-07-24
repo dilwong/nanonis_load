@@ -208,6 +208,11 @@ class Grid :
         self._cid_motion = None
         self._cid_release = None
 
+        self.colormin = None
+        self.colormax = None
+        self.colorstd = None
+        self.exclude_range = 2
+
         # Final checks
         if self.channel not in self.data: raise ValueError(f"Channel '{self.channel}' not found.")
         if self.biases is None or len(self.biases) == 0: raise ValueError("Bias data missing.")
@@ -293,7 +298,7 @@ class Grid :
         if not isinstance(other, Grid): return NotImplemented; gv_self, gv_other = self.gate_voltage, other.gate_voltage
         if np.isnan(gv_self) or np.isnan(gv_other): return np.isnan(gv_self) and not np.isnan(gv_other); return self.gate_voltage < other.gate_voltage
 
-    def plot(self, sweep_index=0, mode='linecut'):
+    def plot(self, sweep_index=0, mode='linecut', colormin = None, colormax = None, colorstd = 3, exclude_range = 2):   
         """
         Creates the plot layout and initializes the display.
 
@@ -340,11 +345,20 @@ class Grid :
                 self.linecut_ax = None
             plt.subplots_adjust(wspace=0.3, hspace=0.3)
 
+        self.colormin = colormin
+        self.colormax = colormax
+        self.colorstd = colorstd
+        self.exclude_range = exclude_range
+        t = self.exclude_range
+
         # --- Plot Initial Grid Image (Left Side) ---
         current_slice = self.data[self.channel][:, :, self.sweep_index]
 
-        vmin = np.mean(current_slice) - 3 * np.std(current_slice)
-        vmax = np.mean(current_slice) + 3 * np.std(current_slice)
+        vmin = np.mean(current_slice[t:-t, t:-t]) - self.colorstd * np.std(current_slice[t:-t, t:-t])
+        vmax = np.mean(current_slice[t:-t, t:-t]) + self.colorstd * np.std(current_slice[t:-t, t:-t])
+
+        if self.colormin is not None: vmin = self.colormin
+        if self.colormax is not None: vmax = self.colormax
 
         self.im = self.plot_ax.imshow(
             current_slice,
@@ -435,10 +449,20 @@ class Grid :
             # (Handle non-finite, set data and clim for self.im - unchanged)
             if not np.all(np.isfinite(current_slice)): current_slice = np.where(np.isfinite(current_slice), current_slice, np.nan)
             self.im.set_data(current_slice)
-            vmin = np.mean(current_slice) - 3 * np.std(current_slice)
-            vmax = np.mean(current_slice) + 3 * np.std(current_slice)
+            t = self.exclude_range
+            vmin = np.mean(current_slice[t:-t, t:-t]) - self.colorstd * np.std(current_slice[t:-t, t:-t])
+            vmax = np.mean(current_slice[t:-t, t:-t]) + self.colorstd * np.std(current_slice[t:-t, t:-t])
             if np.isfinite(vmin) and np.isfinite(vmax) and vmin < vmax: self.im.set_clim(vmin, vmax)
             elif np.isfinite(vmin) and np.isfinite(vmax): self.im.set_clim(vmin - 0.1*abs(vmin) if vmin != 0 else -0.1, vmax + 0.1*abs(vmax) if vmax != 0 else 0.1)
+
+            # Always use self.colormin if set, even on update
+            if self.colormin is not None:
+                vmin = self.colormin
+                self.im.set_clim(vmin, vmax)
+
+            if self.colormax is not None:
+                vmax = self.colormax
+                self.im.set_clim(vmin, vmax)
 
             # Update FFT plot if enabled
             if self.fft and self.fft_plot and self.fft_ax:
