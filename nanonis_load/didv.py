@@ -356,10 +356,16 @@ class Spectrum:
         min_search_window=(-0.01, 0.01),
         max_search_window=(-0.01, 0.01),
         verbose=False,
+        gaussian_filter_order = 0
     ) -> float:
+
+        from scipy.ndimage import gaussian_filter1d
 
         bias = self.data["Bias calc (V)"]
         current = self.data["Current (A)"]
+
+        if gaussian_filter_order > 0: 
+            current = gaussian_filter1d(current, sigma=gaussian_filter_order, mode='nearest')
 
         if mode.lower() in ["fwhm", "full width half max", "derivative", "peaks"]:
             bounds = self.get_gap_bounds(
@@ -377,16 +383,18 @@ class Spectrum:
 
         elif mode.lower() == "current":
             lower_threshold_indices = np.where(
-                self.data["Current (A)"] < -current_threshold
+                current < -current_threshold
             )[0]
             if np.any(lower_threshold_indices):
                 lower_threshold_index0 = lower_threshold_indices.max()
+                lower_idx = (lower_threshold_index0, lower_threshold_index0 + 1)
             else:
                 lower_threshold_index0 = 0
-            lower_idx = (lower_threshold_index0, lower_threshold_index0 + 1)
+                lower_idx = (lower_threshold_index0, lower_threshold_index0)
+            
 
             upper_threshold_indices = np.where(
-                self.data["Current (A)"] > current_threshold
+                current > current_threshold
             )[0]
             if np.any(upper_threshold_indices) and len(upper_threshold_indices) > 1:
                 upper_threshold_index0 = upper_threshold_indices.min()
