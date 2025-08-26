@@ -143,7 +143,31 @@ class Gapmap:
 
         return total_filling_factor, delta_filling_factor, v_t, v_m, c_g, c_t
     
-    def invert_filling_factor_calculator(self, what_to_fix, what_to_change) :
+    
+    def invert_filling_factor_calculator(self, constant: list, variable : list) :
+
+        if constant[0] in ['total_filling_factor', 'total'] :
+            total_filling_factor = constant[1]
+            delta_filling_factor = variable
+
+        elif constant[0] in ['delta_filling_factor', 'delta'] :
+            delta_filling_factor = constant[1]
+            total_filling_factor = variable
+
+        elif constant[0] in ['v_t', 'top_filling_factor'] :
+            v_t = constant[1]
+            v_m = variable
+            total_filling_factor = v_t + v_m
+            delta_filling_factor = v_t - v_m
+
+        elif constant[0] in ['v_m', 'middle_filling_factor'] :
+            v_m = constant[1]
+            v_t = variable
+            total_filling_factor = v_t + v_m
+            delta_filling_factor = v_t - v_m
+
+        
+
         
 
 
