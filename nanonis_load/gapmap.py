@@ -48,6 +48,11 @@ class Gapmap:
         self.gaussian_filter_order = gaussian_filter_order
         self.current_threshold = current_threshold
 
+        self.delta_V_g = []
+        self.delta_V_m = []
+        self.V_g_offset = 0
+        self.V_m_offset = 0
+
         # Accept either a list of Spectrum objects or a filename pattern string
         if isinstance(spectra_or_pattern, str):
             pattern = f"{spectra_or_pattern}*.dat" if glob_wildcard else spectra_or_pattern
@@ -64,7 +69,6 @@ class Gapmap:
 
         # Precompute arrays used for mapping (mirrors your notebook workflow)
         self._compute_basic_arrays()
-        self.filling_factor_convert
 
     def _compute_basic_arrays(self):
         """Compute arrays: current, Z, V_g, V_m, gap_sizes and mask/filter used later."""
@@ -113,12 +117,23 @@ class Gapmap:
         )
         return self.unique_V_g, self.unique_V_m, np.array(interp_values)
     
-    def filling_factor_convert(V_g, V_m, delta_V_g, delta_V_m, offset_V_g=0, offset_V_m=0):
-        reshaped_V_g = V_g - offset_V_g
-        reshaped_V_m = V_m - offset_V_m
-
+    def capacitance_calculator (self) :
+        delta_V_g = self.delta_V_g
+        delta_V_m = self.delta_V_m
         c_g = 1 / abs(delta_V_g[0] - delta_V_g[1])
         c_t = 1 / abs(delta_V_m[0] - delta_V_m[1])
+
+        self.c_g = c_g
+        self.c_t = c_t
+
+        return self.c_g, self.c_t
+        
+    
+    def filling_factor_convert(self, V_g, V_m):
+        reshaped_V_g = V_g - self.V_g_offset
+        reshaped_V_m = V_m - self.V_m_offset
+
+        c_g, c_t = self.capacitance_calculator()
 
         total_filling_factor = c_g * reshaped_V_g
         delta_filling_factor = 2 * c_t * reshaped_V_m - c_g * reshaped_V_g
@@ -127,6 +142,10 @@ class Gapmap:
         v_m = (total_filling_factor - delta_filling_factor) / 2
 
         return total_filling_factor, delta_filling_factor, v_t, v_m, c_g, c_t
+    
+    def invert_filling_factor_calculator(self, what_to_fix, what_to_change) :
+        
+
 
     def plot(
         self,
@@ -141,6 +160,7 @@ class Gapmap:
         shading: str = "nearest",
         interp_method: str = "nearest",
         interp_rescale: bool = True,
+        filling_factor = False
     ) -> Tuple[plt.Figure, plt.Axes]:
         """
         Create a pcolormesh gap map like in your notebook.
