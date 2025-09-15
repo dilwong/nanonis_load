@@ -143,6 +143,7 @@ class Gapmap:
 
         return total_filling_factor, delta_filling_factor, v_t, v_m, c_g, c_t
     
+<<<<<<< HEAD
     
     def invert_filling_factor_calculator(self, constant: list, variable: list, N: int = 50):
         """
@@ -189,6 +190,11 @@ class Gapmap:
         V_m = (delta + c_g * V_g) / (2.0 * c_t)
 
         return V_g, V_m   
+=======
+    def invert_filling_factor_calculator(self, what_to_fix, what_to_change) :
+        print('test')
+        
+>>>>>>> febb234ba2f8ff5654c4133182f90b804b6638ca
 
 
     def plot(
