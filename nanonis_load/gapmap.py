@@ -144,31 +144,51 @@ class Gapmap:
         return total_filling_factor, delta_filling_factor, v_t, v_m, c_g, c_t
     
     
-    def invert_filling_factor_calculator(self, constant: list, variable : list) :
+    def invert_filling_factor_calculator(self, constant: list, variable: list, N: int = 50):
+        """
+        Build V_g and V_m ranges given one fixed quantity (constant) and the variable range (variable).
+        'constant' should be like ['total_filling_factor', value] or ['v_t', value]
+        'variable' should be a 2-element iterable [start, end] specifying the range for the other axis.
+        Returns V_g, V_m arrays of length N.
+        """
+        if not (isinstance(constant, (list, tuple)) and len(constant) >= 2):
+            raise ValueError("constant must be a list or tuple like ['name', value].")
 
-        if constant[0] in ['total_filling_factor', 'total'] :
-            total_filling_factor = constant[1]
-            delta_filling_factor = variable
+        name = constant[0]
+        val = constant[1]
 
-        elif constant[0] in ['delta_filling_factor', 'delta'] :
-            delta_filling_factor = constant[1]
-            total_filling_factor = variable
+        if name in ["total_filling_factor", "total"]:
+            total_filling_factor = [val, val]
+            delta_filling_factor = list(variable)
 
-        elif constant[0] in ['v_t', 'top_filling_factor'] :
-            v_t = constant[1]
-            v_m = variable
-            total_filling_factor = v_t + v_m
-            delta_filling_factor = v_t - v_m
+        elif name in ["delta_filling_factor", "delta"]:
+            delta_filling_factor = [val, val]
+            total_filling_factor = list(variable)
 
-        elif constant[0] in ['v_m', 'middle_filling_factor'] :
-            v_m = constant[1]
-            v_t = variable
-            total_filling_factor = v_t + v_m
-            delta_filling_factor = v_t - v_m
+        elif name in ["v_t", "top_filling_factor"]:
+            v_t_fixed = [val, val]
+            v_m_var = list(variable)
+            total_filling_factor = [vt + vm for vt, vm in zip(v_t_fixed, v_m_var)]
+            delta_filling_factor = [vt - vm for vt, vm in zip(v_t_fixed, v_m_var)]
 
-        
+        elif name in ["v_m", "middle_filling_factor"]:
+            v_m_fixed = [val, val]
+            v_t_var = list(variable)
+            total_filling_factor = [vt + vm for vt, vm in zip(v_t_var, v_m_fixed)]
+            delta_filling_factor = [vt - vm for vt, vm in zip(v_t_var, v_m_fixed)]
 
-        
+        else:
+            raise ValueError(f"Unknown constant name: {name}")
+
+        c_g, c_t = self.capacitance_calculator()
+
+        total = np.linspace(float(total_filling_factor[0]), float(total_filling_factor[1]), N)
+        delta = np.linspace(float(delta_filling_factor[0]), float(delta_filling_factor[1]), N)
+
+        V_g = total / c_g
+        V_m = (delta + c_g * V_g) / (2.0 * c_t)
+
+        return V_g, V_m   
 
 
     def plot(
@@ -184,7 +204,8 @@ class Gapmap:
         shading: str = "nearest",
         interp_method: str = "nearest",
         interp_rescale: bool = True,
-        filling_factor = False
+        total_filling_factor : bool = False,
+        top_filling_factor : bool = False,
     ) -> Tuple[plt.Figure, plt.Axes]:
         """
         Create a pcolormesh gap map like in your notebook.
@@ -195,6 +216,12 @@ class Gapmap:
 
         # reshape into rows = len(unique_V_m), cols = len(unique_V_g)
         Z = interp_vals.reshape(-1, len(uniq_Vg)) * 1000
+                
+        v_g_2d, v_m_2d = np.meshgrid(uniq_Vg, uniq_Vm)
+
+        self.v_g_2d = v_g_2d
+        self.v_m_2d = v_m_2d
+        self.gaps = Z
 
         # convert V_m to mV for plotting
         uniq_Vm_mV = uniq_Vm * 1000.0
@@ -204,7 +231,21 @@ class Gapmap:
         else:
             fig = ax.figure
 
-        pcm = ax.pcolormesh(sorted(uniq_Vg), sorted(uniq_Vm_mV), Z , shading=shading, cmap=cmap, vmin=vmin, vmax=vmax)
+        if total_filling_factor == True :
+            total, delta, _, _, _, _ = self.filling_factor_convert(self.v_g_2d, self.v_m_2d)
+            pcm = ax.pcolormesh(total, delta, Z , shading=shading, cmap=cmap, vmin=vmin, vmax=vmax)
+            xlabel = "Total filling factor"
+            ylabel = r"$\Delta \nu$"
+
+        elif top_filling_factor == True :
+            _, _, v_t, v_m, _, _ = self.filling_factor_convert(self.v_g_2d, self.v_m_2d)
+            pcm = ax.pcolormesh(v_t, v_m, Z , shading=shading, cmap=cmap, vmin=vmin, vmax=vmax)
+            xlabel = r"$\nu top$"
+            ylabel = r"$\nu middle$"
+
+        else :
+            pcm = ax.pcolormesh(sorted(uniq_Vg), sorted(uniq_Vm_mV), Z , shading=shading, cmap=cmap, vmin=vmin, vmax=vmax)
+
         cbar = fig.colorbar(pcm, ax=ax) if colorbar else None
 
         ax.set_xlabel(xlabel)

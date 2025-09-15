@@ -927,6 +927,7 @@ class Plot:
         direction: int = 0,
         flatten: bool = False,
         subtract_plane: bool = False,
+        subtract_line : bool = False,
         cmap=util.get_w_cmap(),
         rasterized=True,
     ):
@@ -960,9 +961,14 @@ class Plot:
         ]
         # x = x.T
         # y = y.T
+
+        if subtract_line == True :
+            image_data = sxm_data.subtract_linear_by_line(channel, direction)
+
         if subtract_plane == True:
             image_data = sxm_data.subtract_plane(channel, direction)
         # shading = 'auto' in the pcolormesh command forces pcolormesh to accept x, y with the same dimensions as image_data.T
+
         self.im_plot = self.ax.imshow(
             image_data,
             origin="lower",
