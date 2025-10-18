@@ -11,6 +11,7 @@ from typing import Iterable, List, Optional, Sequence, Tuple, Union
 import numpy as np
 import scipy.interpolate
 import matplotlib.pyplot as plt
+import matplotlib.widgets
 
 
 class Gapmap:
@@ -75,6 +76,9 @@ class Gapmap:
         # current array (not used directly for plotting but preserved for API)
         self.current = np.array([spectrum.data[self.channel] for spectrum in self.spectra])
 
+        # Bias array from the first spectrum. Assumes all spectra were taken at the same bias values
+        self.biases = np.array(self.spectra[0].data['Bias calc (V)'])
+
         # Z (header 'Z (m)')
         self.Z = np.array([float(spectrum.header.get("Z (m)", np.nan)) for spectrum in self.spectra])
 
@@ -117,7 +121,27 @@ class Gapmap:
         )
         return self.unique_V_g, self.unique_V_m, np.array(interp_values)
     
-    def capacitance_calculator (self) :
+    def compute_bias_slice_interpolation(self, bias, gradient=False, method: str = 'nearest'):
+        """
+        Returns the current (or its gradient) at a bias slice
+        """
+        pairs = list(itertools.product(self.unique_V_m, self.unique_V_g))
+        unique_pairs = sorted(list(set(pairs)))
+        bias_index = np.argmin(np.abs(self.biases - bias))
+        if gradient:
+            current_slice = np.gradient(self.current, axis=-1)[:, bias_index]
+        else:
+            current_slice = self.current[:, bias_index]
+        interp_values = scipy.interpolate.griddata(
+            np.c_[self.V_m, self.V_g],  # points (V_m, V_g)
+            current_slice,             # values
+            unique_pairs,                      # query points
+            method=method,
+            rescale=True,
+        )
+        return interp_values
+    
+    def capacitance_calculator(self):
         delta_V_g = self.delta_V_g
         delta_V_m = self.delta_V_m
         c_g = 1 / abs(delta_V_g[0] - delta_V_g[1])
@@ -143,7 +167,6 @@ class Gapmap:
 
         return total_filling_factor, delta_filling_factor, v_t, v_m, c_g, c_t
     
-<<<<<<< HEAD
     
     def invert_filling_factor_calculator(self, constant: list, variable: list, N: int = 50):
         """
@@ -190,14 +213,9 @@ class Gapmap:
         V_m = (delta + c_g * V_g) / (2.0 * c_t)
 
         return V_g, V_m   
-=======
-    def invert_filling_factor_calculator(self, what_to_fix, what_to_change) :
-        print('test')
-        
->>>>>>> febb234ba2f8ff5654c4133182f90b804b6638ca
 
 
-    def plot(
+    def plot_gap_size(
         self,
         ax: Optional[plt.Axes] = None,
         vmin: Optional[float] = 10.0,
@@ -265,4 +283,42 @@ class Gapmap:
         return fig, ax
 
 
+    def plot_bias_slice(self, fig=None, ax=None, vmin=None, vmax=None, gradient=True, cmap='RdBu_r',  xlabel: str = "$V_g$ (V)",  ylabel: str = "$V_m$ (V)", auto_clim=True):
+        if ax is None:
+            fig, ax = plt.subplots()
 
+        fig.subplots_adjust(bottom=0.25)
+        
+        slider_ax = fig.add_axes([0.25, 0.01, 0.65, 0.03])
+        self.bias_slider = matplotlib.widgets.Slider(
+            ax=slider_ax,
+            label="Bias (V)",
+            valmin=np.amin(self.biases),
+            valmax=np.amax(self.biases),
+            valinit=np.amin(self.biases)
+        )
+
+        bias_slice = self.compute_bias_slice_interpolation(np.amin(self.biases), gradient=gradient).reshape((-1, len(self.unique_V_g)))
+        
+        pcolor = ax.pcolormesh(sorted(self.unique_V_g), sorted(self.unique_V_m), bias_slice, vmin=vmin if not auto_clim else np.quantile(bias_slice, 0.01), vmax=vmax if not auto_clim else np.quantile(bias_slice, 0.99), cmap=cmap)
+        cbar = fig.colorbar(pcolor)
+        def slider_update(bias):
+            new_slice = self.compute_bias_slice_interpolation(bias, gradient=gradient)
+            pcolor.set_array(new_slice)
+            if auto_clim:
+                pcolor.set_clim(np.quantile(new_slice, 0.01), np.quantile(new_slice, 0.99))
+            fig.canvas.draw_idle()
+
+        self.bias_slider.on_changed(slider_update)
+
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+
+        ax.xaxis.label.set_size(12)
+        ax.yaxis.label.set_size(12)
+
+        if cbar is not None:
+            cbar.set_label("Current (A)")
+
+
+        return fig, ax
