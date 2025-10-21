@@ -356,7 +356,16 @@ class Spectrum:
         min_search_window=(-0.01, 0.01),
         max_search_window=(-0.01, 0.01),
         verbose=False,
+        gaussian_filter_order = 0
     ) -> float:
+
+        from scipy.ndimage import gaussian_filter1d
+
+        bias = self.data["Bias calc (V)"]
+        current = self.data["Current (A)"]
+
+        if gaussian_filter_order > 0: 
+            current = gaussian_filter1d(current, sigma=gaussian_filter_order, mode='nearest')
 
         if mode.lower() in ["fwhm", "full width half max", "derivative", "peaks"]:
             bounds = self.get_gap_bounds(
@@ -370,27 +379,62 @@ class Spectrum:
                 max_search_window=max_search_window,
             )
             return np.abs(bounds[0] - bounds[1])
+        
+
         elif mode.lower() == "current":
             lower_threshold_indices = np.where(
-                self.data["Current (A)"] < -current_threshold
+                current < -current_threshold
             )[0]
             if np.any(lower_threshold_indices):
-                lower_threshold_index = lower_threshold_indices.max()
+                lower_threshold_index0 = lower_threshold_indices.max()
+                lower_idx = (lower_threshold_index0, lower_threshold_index0 + 1)
             else:
-                lower_threshold_index = 0
+                lower_threshold_index0 = 0
+                lower_idx = (lower_threshold_index0, lower_threshold_index0)
+            
 
             upper_threshold_indices = np.where(
-                self.data["Current (A)"] > current_threshold
+                current > current_threshold
             )[0]
-            if np.any(upper_threshold_indices):
-                upper_threshold_index = upper_threshold_indices.min()
+            if np.any(upper_threshold_indices) and len(upper_threshold_indices) > 1:
+                upper_threshold_index0 = upper_threshold_indices.min()
+                upper_idx = (upper_threshold_index0, upper_threshold_index0 + 1)
             else:
-                upper_threshold_index = len(self.data)
+                upper_threshold_index0 = len(self.data) - 1
+                upper_idx = (upper_threshold_index0, upper_threshold_index0)
+            
 
-            bias_increment = abs(
-                self.data["Bias calc (V)"][0] - self.data["Bias calc (V)"][1]
-            )
-            return (upper_threshold_index - lower_threshold_index) * bias_increment
+            def _linear_interpolate_x_for_y(x0, y0, x1, y1, y_target):
+                return x0 + (y_target - y0) * (x1 - x0) / (y1 - y0)
+
+            def bias_at_cross(pair, threshold_value):
+                i0, i1 = pair
+                if i0 == i1:
+                    return bias[i0]
+                y0 = current[i0]
+                y1 = current[i1]
+                x0 = bias[i0]
+                x1 = bias[i1]
+                if y0 == y1:
+                    # flat segment — cannot interpolate; fall back to midpoint
+                    return 0.5 * (x0 + x1)
+                try:
+                    return _linear_interpolate_x_for_y(x0, y0, x1, y1, threshold_value)
+                except Exception:
+                    # numerical fallback
+                    return 0.5 * (x0 + x1)
+                
+
+            lower_bias = bias_at_cross(lower_idx, -current_threshold)
+            upper_bias = bias_at_cross(upper_idx, current_threshold)
+
+            gap = abs(upper_bias - lower_bias)
+            return float(gap)
+
+            #bias_increment = abs(
+            #    self.data["Bias calc (V)"][0] - self.data["Bias calc (V)"][1]
+            #)
+            #return (upper_threshold_index - lower_threshold_index) * bias_increment
 
     def gap_size(self, threshold) -> float:
         """
