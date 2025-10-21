@@ -136,8 +136,7 @@ class Nanonis3ds:
             )
 
 
-class Grid :
-
+class Grid:
 
     def __init__(
         self,
@@ -146,7 +145,7 @@ class Grid :
         fft=False,
         transform=None,
         energy_smoothing=None,
-        initial_mode='linecut', # 'linecut' or 'point'
+        initial_mode="linecut",  # 'linecut' or 'point'
     ):
         """Initializes the Grid object, loading data."""
         self.nanonis_3ds = Nanonis3ds(filename)
@@ -162,45 +161,74 @@ class Grid :
         self.transform = transform
         if self.transform == "diff":
             print("Applying numerical differentiation...")
-            bias_step = np.abs(self.biases[1] - self.biases[0]) if self.biases is not None and len(self.biases) > 1 else 1.0
-            if self.channel in self.data: self.data[self.channel] = np.gradient(self.data[self.channel], bias_step, axis=-1)
-            else: raise ValueError(f"Channel '{self.channel}' not found for differentiation.")
+            bias_step = (
+                np.abs(self.biases[1] - self.biases[0])
+                if self.biases is not None and len(self.biases) > 1
+                else 1.0
+            )
+            if self.channel in self.data:
+                self.data[self.channel] = np.gradient(
+                    self.data[self.channel], bias_step, axis=-1
+                )
+            else:
+                raise ValueError(
+                    f"Channel '{self.channel}' not found for differentiation."
+                )
         self.energy_smoothing = energy_smoothing
-        if self.energy_smoothing is not None and isinstance(self.energy_smoothing, (list, tuple)) and len(self.energy_smoothing) == 2:
+        if (
+            self.energy_smoothing is not None
+            and isinstance(self.energy_smoothing, (list, tuple))
+            and len(self.energy_smoothing) == 2
+        ):
             print(f"Applying Gaussian smoothing (sigma={self.energy_smoothing[1]})...")
-            if self.channel in self.data: self.data[self.channel] = scipy.ndimage.gaussian_filter1d(self.data[self.channel], sigma=self.energy_smoothing[1], axis=-1, mode='nearest')
-            else: raise ValueError(f"Channel '{self.channel}' not found for smoothing.")
+            if self.channel in self.data:
+                self.data[self.channel] = scipy.ndimage.gaussian_filter1d(
+                    self.data[self.channel],
+                    sigma=self.energy_smoothing[1],
+                    axis=-1,
+                    mode="nearest",
+                )
+            else:
+                raise ValueError(f"Channel '{self.channel}' not found for smoothing.")
 
         # --- Interaction state ---
         self.sweep_index = 0
-        self.mode = initial_mode # 'linecut' or 'point'
+        self.mode = initial_mode  # 'linecut' or 'point'
 
         # State for Point Mode
         self.selected_points = []
-        self.preset_colors = ['red', 'blue', 'orange', 'cyan',
-                            'magenta', 'green', 'pink', 'olive']
+        self.preset_colors = [
+            "red",
+            "blue",
+            "orange",
+            "cyan",
+            "magenta",
+            "green",
+            "pink",
+            "olive",
+        ]
 
         # State for Linecut Mode
-        self.click_start_pos = None # Stores (x, y) of mouse press for linecut drag
+        self.click_start_pos = None  # Stores (x, y) of mouse press for linecut drag
 
         # --- Matplotlib objects ---
         self.fig = None
-        self.plot_ax = None      # Main grid map
+        self.plot_ax = None  # Main grid map
         self.spectrum_ax = None  # For point spectra
-        self.linecut_ax = None   # For linecut imshow
-        self.fft_ax = None       # Optional FFT map
+        self.linecut_ax = None  # For linecut imshow
+        self.fft_ax = None  # Optional FFT map
         # self.fft_linecut_ax = None # Optional FFT linecut (omitted for now)
 
-        self.im = None             # Grid map imshow object
-        self.colorbar = None       # Grid map colorbar
-        self.fft_plot = None       # FFT map imshow object
-        self.fft_colorbar = None   # FFT map colorbar
+        self.im = None  # Grid map imshow object
+        self.colorbar = None  # Grid map colorbar
+        self.fft_plot = None  # FFT map imshow object
+        self.fft_colorbar = None  # FFT map colorbar
 
         # Objects specific to modes
-        self.selected_markers = None # Scatter plot for point mode
-        self.linecut_line = None     # Line2D overlay for linecut mode
-        self.linecut_plot = None     # Linecut imshow object
-        self.linecut_colorbar = None # Linecut colorbar
+        self.selected_markers = None  # Scatter plot for point mode
+        self.linecut_line = None  # Line2D overlay for linecut mode
+        self.linecut_plot = None  # Linecut imshow object
+        self.linecut_colorbar = None  # Linecut colorbar
 
         # Event connection IDs
         self._cid_key = None
@@ -209,11 +237,15 @@ class Grid :
         self._cid_release = None
 
         # Final checks
-        if self.channel not in self.data: raise ValueError(f"Channel '{self.channel}' not found.")
-        if self.biases is None or len(self.biases) == 0: raise ValueError("Bias data missing.")
-        if self.mode not in ['linecut', 'point']:
-            print(f"Warning: Invalid initial_mode '{self.mode}'. Defaulting to 'linecut'.")
-            self.mode = 'linecut'
+        if self.channel not in self.data:
+            raise ValueError(f"Channel '{self.channel}' not found.")
+        if self.biases is None or len(self.biases) == 0:
+            raise ValueError("Bias data missing.")
+        if self.mode not in ["linecut", "point"]:
+            print(
+                f"Warning: Invalid initial_mode '{self.mode}'. Defaulting to 'linecut'."
+            )
+            self.mode = "linecut"
 
     def get_lockin_calibration_factor(
         self, lockin_channel: str = "Input 2 (V)"
@@ -227,20 +259,27 @@ class Grid :
     # --- Properties (unchanged) ---
     @property
     def gate_voltage(self):
-        try: return float(self.header.get("Ext. VI 1>Gate voltage (V)", "NaN"))
-        except (ValueError, TypeError): return float('nan')
+        try:
+            return float(self.header.get("Ext. VI 1>Gate voltage (V)", "NaN"))
+        except (ValueError, TypeError):
+            return float("nan")
 
     @property
     def second_gate(self):
-        try: return float(self.header.get("Ext. VI 1>Second gate voltage (V)", "NaN"))
-        except (ValueError, TypeError): return float('nan')
+        try:
+            return float(self.header.get("Ext. VI 1>Second gate voltage (V)", "NaN"))
+        except (ValueError, TypeError):
+            return float("nan")
 
     @property
-    def x_size(self): return float(self.header["x_size (nm)"])
+    def x_size(self):
+        return float(self.header["x_size (nm)"])
+
     @property
     def x_center(self):
         """Returns the center x coordinate in nm."""
         return self.header["x_center (nm)"]
+
     @property
     def xlist(self):
         """Returns a list of the x-coordinates (in nm) where data is taken."""
@@ -248,18 +287,24 @@ class Grid :
         return np.linspace(
             x_center - self.x_size / 2, x_center + self.x_size / 2, self.x_pixels
         )
+
     @property
     def x_coords(self):
         return self.xlist
-    @property
-    def x_pixels(self): return int(self.header["x_pixels"])
 
     @property
-    def y_size(self): return float(self.header["y_size (nm)"])
+    def x_pixels(self):
+        return int(self.header["x_pixels"])
+
+    @property
+    def y_size(self):
+        return float(self.header["y_size (nm)"])
+
     @property
     def y_center(self):
         """Returns the center y coordinate in nm."""
         return self.header["y_center (nm)"]
+
     @property
     def ylist(self):
         """Returns a list of the y-coordinates (in nm) where data is taken."""
@@ -267,33 +312,61 @@ class Grid :
         return np.linspace(
             y_center - self.y_size / 2, y_center + self.y_size / 2, self.y_pixels
         )
+
     @property
     def y_coords(self):
         return self.ylist
-    @property
-    def y_pixels(self): return int(self.header["y_pixels"])
 
     @property
-    def Z(self): 
-        if hasattr(self.nanonis_3ds, 'parameters') and "Z (m)" in self.nanonis_3ds.parameters:
-            expected = self.y_pixels * self.x_pixels; z_data = np.array(self.nanonis_3ds.parameters["Z (m)"])
-            if z_data.size == expected: return z_data.reshape((self.y_pixels, self.x_pixels))
-            else: print(f"Warning: Z data size mismatch."); return z_data
-        else: print("Warning: Could not retrieve Z data."); return np.full((self.y_pixels, self.x_pixels), np.nan)
+    def y_pixels(self):
+        return int(self.header["y_pixels"])
 
     @property
-    def bias_range(self): return abs(self.biases.max() - self.biases.min()) if self.biases is not None and len(self.biases) > 0 else 0
+    def Z(self):
+        if (
+            hasattr(self.nanonis_3ds, "parameters")
+            and "Z (m)" in self.nanonis_3ds.parameters
+        ):
+            expected = self.y_pixels * self.x_pixels
+            z_data = np.array(self.nanonis_3ds.parameters["Z (m)"])
+            if z_data.size == expected:
+                return z_data.reshape((self.y_pixels, self.x_pixels))
+            else:
+                print(f"Warning: Z data size mismatch.")
+                return z_data
+        else:
+            print("Warning: Could not retrieve Z data.")
+            return np.full((self.y_pixels, self.x_pixels), np.nan)
+
+    @property
+    def bias_range(self):
+        return (
+            abs(self.biases.max() - self.biases.min())
+            if self.biases is not None and len(self.biases) > 0
+            else 0
+        )
 
     # --- Equality, Hashing, Comparison (unchanged) ---
-    def __eq__(self, other): # (Unchanged)
-        if not isinstance(other, Grid): return NotImplemented; gv_self, gv_other = self.gate_voltage, other.gate_voltage
-        if np.isnan(gv_self) and np.isnan(gv_other): return True; return gv_self == gv_other
-    def __hash__(self): return hash(self.gate_voltage) # (Unchanged)
-    def __lt__(self, other): # (Unchanged)
-        if not isinstance(other, Grid): return NotImplemented; gv_self, gv_other = self.gate_voltage, other.gate_voltage
-        if np.isnan(gv_self) or np.isnan(gv_other): return np.isnan(gv_self) and not np.isnan(gv_other); return self.gate_voltage < other.gate_voltage
+    def __eq__(self, other):  # (Unchanged)
+        if not isinstance(other, Grid):
+            return NotImplemented
+        gv_self, gv_other = self.gate_voltage, other.gate_voltage
+        if np.isnan(gv_self) and np.isnan(gv_other):
+            return True
+        return gv_self == gv_other
 
-    def plot(self, sweep_index=0, mode='linecut'):
+    def __hash__(self):
+        return hash(self.gate_voltage)  # (Unchanged)
+
+    def __lt__(self, other):  # (Unchanged)
+        if not isinstance(other, Grid):
+            return NotImplemented
+        gv_self, gv_other = self.gate_voltage, other.gate_voltage
+        if np.isnan(gv_self) or np.isnan(gv_other):
+            return np.isnan(gv_self) and not np.isnan(gv_other)
+        return self.gate_voltage < other.gate_voltage
+
+    def plot(self, sweep_index=0, mode="linecut", linecut_cmap="RdYlBu_r"):
         """
         Creates the plot layout and initializes the display.
 
@@ -308,9 +381,9 @@ class Grid :
         self.sweep_index = sweep_index
 
         # Validate mode input
-        if mode not in ['linecut', 'point']:
+        if mode not in ["linecut", "point"]:
             print(f"Invalid mode '{mode}'. Defaulting to 'linecut'.")
-            mode = 'linecut'
+            mode = "linecut"
         self.mode = mode
 
         # Close any existing figure
@@ -321,7 +394,7 @@ class Grid :
             self.fig, axs = plt.subplots(2, 2, figsize=(12, 6))
             self.plot_ax = axs[0, 0]
             self.fft_ax = axs[0, 1]
-            if self.mode == 'linecut':
+            if self.mode == "linecut":
                 self.linecut_ax = axs[1, 0]
                 self.spectrum_ax = None
             else:
@@ -329,10 +402,10 @@ class Grid :
                 self.linecut_ax = None
             plt.subplots_adjust(wspace=0.3, hspace=0.3)
 
-        else :         # --- Create Figure and Axes (1x2 layout) ---
+        else:  # --- Create Figure and Axes (1x2 layout) ---
             self.fig, axs = plt.subplots(1, 2, figsize=(12, 6))
             self.plot_ax = axs[0]
-            if self.mode == 'linecut':
+            if self.mode == "linecut":
                 self.linecut_ax = axs[1]
                 self.spectrum_ax = None
             else:
@@ -349,12 +422,15 @@ class Grid :
         self.im = self.plot_ax.imshow(
             current_slice,
             extent=(0, self.x_size, 0, self.y_size),
-            vmin = vmin, vmax = vmax,
-            origin='lower',
-            interpolation='nearest',
-            aspect='equal'
+            vmin=vmin,
+            vmax=vmax,
+            origin="lower",
+            interpolation="nearest",
+            aspect="equal",
         )
-        self.colorbar = self.fig.colorbar(self.im, ax=self.plot_ax, label=self.channel, shrink=0.8)
+        self.colorbar = self.fig.colorbar(
+            self.im, ax=self.plot_ax, label=self.channel, shrink=0.8
+        )
         self.plot_ax.set_xlabel("X (nm)")
         self.plot_ax.set_ylabel("Y (nm)")
         self._update_plot_title()  # Updates title with energy
@@ -377,19 +453,26 @@ class Grid :
             self.fft_plot = None
 
         # --- Initialize Right-Side Plot Based on Mode ---
-        if self.mode == 'linecut':
+        if self.mode == "linecut":
             # Linecut Mode
             self.linecut_ax.set_xlabel("Distance (nm)")
             self.linecut_ax.set_ylabel("Bias (V)")
             self.linecut_ax.set_title("Linecut")
             self.linecut_plot = self.linecut_ax.imshow(
                 np.zeros((len(self.biases), 1)),  # Placeholder data
-                cmap="RdYlBu_r",
+                cmap=linecut_cmap,
                 aspect="auto",
-                origin='lower',
-                extent=(0, 1, self.biases.min(), self.biases.max())  # Placeholder extent
+                origin="lower",
+                extent=(
+                    0,
+                    1,
+                    self.biases.min(),
+                    self.biases.max(),
+                ),  # Placeholder extent
             )
-            self.linecut_colorbar = self.fig.colorbar(self.linecut_plot, ax=self.linecut_ax, label=self.channel, shrink=0.8)
+            self.linecut_colorbar = self.fig.colorbar(
+                self.linecut_plot, ax=self.linecut_ax, label=self.channel, shrink=0.8
+            )
             # Linecut Mode Line (initially hidden)
             self.linecut_line = matplotlib.lines.Line2D(
                 [0, 0], [0, 0], color="magenta", linewidth=3, visible=True
@@ -403,42 +486,79 @@ class Grid :
             self.spectrum_ax.grid(True)
             # Point Mode Markers
             self.selected_markers = self.plot_ax.scatter(
-                [], [], marker='x', s=80, linewidths=1.5, zorder=10,
-                edgecolors='black', facecolors='none', visible=True
+                [],
+                [],
+                marker="x",
+                s=80,
+                linewidths=1.5,
+                zorder=10,
+                edgecolors="black",
+                facecolors="none",
+                visible=True,
             )
 
         # --- Connect Event Handlers ---
-        self._cid_key = self.fig.canvas.mpl_connect("key_press_event", self._on_key_press)
-        self._cid_press = self.fig.canvas.mpl_connect("button_press_event", self._on_press)
-        self._cid_motion = self.fig.canvas.mpl_connect("motion_notify_event", self._on_motion)
-        self._cid_release = self.fig.canvas.mpl_connect("button_release_event", self._on_release)
+        self._cid_key = self.fig.canvas.mpl_connect(
+            "key_press_event", self._on_key_press
+        )
+        self._cid_press = self.fig.canvas.mpl_connect(
+            "button_press_event", self._on_press
+        )
+        self._cid_motion = self.fig.canvas.mpl_connect(
+            "motion_notify_event", self._on_motion
+        )
+        self._cid_release = self.fig.canvas.mpl_connect(
+            "button_release_event", self._on_release
+        )
 
         # --- Set Initial Mode Visuals ---
-        self._set_mode_visuals(self.mode)  # Ensure correct plots are cleared/titled initially
+        self._set_mode_visuals(
+            self.mode
+        )  # Ensure correct plots are cleared/titled initially
 
         plt.show()
 
-    def _calculate_fft(self, data_slice): # (Unchanged)
-        if not np.all(np.isfinite(data_slice)): data_slice = np.nan_to_num(data_slice)
+    def _calculate_fft(self, data_slice):  # (Unchanged)
+        if not np.all(np.isfinite(data_slice)):
+            data_slice = np.nan_to_num(data_slice)
         return np.abs(np.fft.fftshift(np.fft.fft2(data_slice)))
 
-    def _update_plot_title(self): # (Unchanged)
-        if self.plot_ax and self.biases is not None and len(self.biases) > self.sweep_index:
+    def _update_plot_title(self):  # (Unchanged)
+        if (
+            self.plot_ax
+            and self.biases is not None
+            and len(self.biases) > self.sweep_index
+        ):
             energy_meV = self.biases[self.sweep_index] * 1000
-            self.plot_ax.set_title(f"Energy = {energy_meV:.2f} meV (Slice {self.sweep_index})") # Press m to toggle mode
-        elif self.plot_ax: self.plot_ax.set_title(f"Mode: {self.mode.capitalize()} ('m' to toggle)")
+            self.plot_ax.set_title(
+                f"Energy = {energy_meV:.2f} meV (Slice {self.sweep_index})"
+            )  # Press m to toggle mode
+        elif self.plot_ax:
+            self.plot_ax.set_title(f"Mode: {self.mode.capitalize()} ('m' to toggle)")
 
     def _update_image_slice(self):
         """Updates the main grid map and FFT map based on sweep_index."""
-        if self.im and 0 <= self.sweep_index < len(self.biases) and self.sweep_index < self.data[self.channel].shape[2]:
+        if (
+            self.im
+            and 0 <= self.sweep_index < len(self.biases)
+            and self.sweep_index < self.data[self.channel].shape[2]
+        ):
             current_slice = self.data[self.channel][:, :, self.sweep_index]
             # (Handle non-finite, set data and clim for self.im - unchanged)
-            if not np.all(np.isfinite(current_slice)): current_slice = np.where(np.isfinite(current_slice), current_slice, np.nan)
+            if not np.all(np.isfinite(current_slice)):
+                current_slice = np.where(
+                    np.isfinite(current_slice), current_slice, np.nan
+                )
             self.im.set_data(current_slice)
             vmin = np.mean(current_slice) - 3 * np.std(current_slice)
             vmax = np.mean(current_slice) + 3 * np.std(current_slice)
-            if np.isfinite(vmin) and np.isfinite(vmax) and vmin < vmax: self.im.set_clim(vmin, vmax)
-            elif np.isfinite(vmin) and np.isfinite(vmax): self.im.set_clim(vmin - 0.1*abs(vmin) if vmin != 0 else -0.1, vmax + 0.1*abs(vmax) if vmax != 0 else 0.1)
+            if np.isfinite(vmin) and np.isfinite(vmax) and vmin < vmax:
+                self.im.set_clim(vmin, vmax)
+            elif np.isfinite(vmin) and np.isfinite(vmax):
+                self.im.set_clim(
+                    vmin - 0.1 * abs(vmin) if vmin != 0 else -0.1,
+                    vmax + 0.1 * abs(vmax) if vmax != 0 else 0.1,
+                )
 
             # Update FFT plot if enabled
             if self.fft and self.fft_plot and self.fft_ax:
@@ -447,23 +567,31 @@ class Grid :
                 # Optionally update FFT clim (e.g., percentile)
                 if np.any(fft_data > 0):
                     vmax_fft = np.percentile(fft_data[fft_data > 0], 99.5)
-                    if vmax_fft > 0: self.fft_plot.set_clim(0, vmax_fft)
-                    else: self.fft_plot.set_clim(0, np.max(fft_data) if np.max(fft_data) > 0 else 1)
-                else: self.fft_plot.set_clim(0, 1)
+                    if vmax_fft > 0:
+                        self.fft_plot.set_clim(0, vmax_fft)
+                    else:
+                        self.fft_plot.set_clim(
+                            0, np.max(fft_data) if np.max(fft_data) > 0 else 1
+                        )
+                else:
+                    self.fft_plot.set_clim(0, 1)
 
-            self._update_plot_title() # Update title with new energy
-            if self.fig and self.fig.canvas: self.fig.canvas.draw_idle()
-
+            self._update_plot_title()  # Update title with new energy
+            if self.fig and self.fig.canvas:
+                self.fig.canvas.draw_idle()
 
     def _update_spectrum_plot(self):
         """Plots individual spectra in point mode."""
-        if self.spectrum_ax is None or self.biases is None: return
+        if self.spectrum_ax is None or self.biases is None:
+            return
 
         # Clear previous lines and legend from spectrum_ax
         lines_to_remove = self.spectrum_ax.get_lines()
-        for line in lines_to_remove: line.remove()
-        legend = self.spectrum_ax.get_legend();
-        if legend: legend.remove()
+        for line in lines_to_remove:
+            line.remove()
+        legend = self.spectrum_ax.get_legend()
+        if legend:
+            legend.remove()
 
         marker_coords_list = []
         marker_colors_list = []
@@ -473,7 +601,7 @@ class Grid :
             # Clear markers if no points selected
             if self.selected_markers:
                 self.selected_markers.set_offsets(np.empty((0, 2)))
-                self.selected_markers.set_facecolors('none')
+                self.selected_markers.set_facecolors("none")
             self.spectrum_ax.set_title("Point Mode Spectra (no points)")
         else:
             num_preset_colors = len(self.preset_colors)
@@ -485,34 +613,42 @@ class Grid :
                         color_index = i % num_preset_colors
                         color = self.preset_colors[color_index]
                         # Plot spectrum line
-                        self.spectrum_ax.plot(self.biases, point_spectrum,
-                                            label=f'({px},{py})', color=color)
+                        self.spectrum_ax.plot(
+                            self.biases,
+                            point_spectrum,
+                            label=f"({px},{py})",
+                            color=color,
+                        )
                         # Collect marker info
                         x_coord = (px + 0.5) * self.x_size / self.x_pixels
                         y_coord = (py + 0.5) * self.y_size / self.y_pixels
                         marker_coords_list.append((x_coord, y_coord))
                         marker_colors_list.append(color)
                         valid_points_count += 1
-                    else: print(f"Warning: Skipping point {point} (non-finite).")
-                else: print(f"Warning: Skipping invalid index {point}.")
+                    else:
+                        print(f"Warning: Skipping point {point} (non-finite).")
+                else:
+                    print(f"Warning: Skipping invalid index {point}.")
 
             # Update markers plot
             if self.selected_markers:
                 if marker_coords_list:
                     self.selected_markers.set_offsets(np.array(marker_coords_list))
                     self.selected_markers.set_facecolors(marker_colors_list)
-                    self.selected_markers.set_edgecolors('black')
-                else: # Clear if no valid points ended up being plotted
+                    self.selected_markers.set_edgecolors("black")
+                else:  # Clear if no valid points ended up being plotted
                     self.selected_markers.set_offsets(np.empty((0, 2)))
-                    self.selected_markers.set_facecolors('none')
+                    self.selected_markers.set_facecolors("none")
 
             # Finalize spectrum plot appearance
             if valid_points_count > 0:
                 self.spectrum_ax.relim()
                 self.spectrum_ax.autoscale_view()
                 plural = "s" if valid_points_count > 1 else ""
-                self.spectrum_ax.set_title(f"{valid_points_count} Point Spectrum{plural}")
-                self.spectrum_ax.legend(fontsize='small', loc='best')
+                self.spectrum_ax.set_title(
+                    f"{valid_points_count} Point Spectrum{plural}"
+                )
+                self.spectrum_ax.legend(fontsize="small", loc="best")
             else:
                 self.spectrum_ax.set_title("Point Mode Spectra (no valid points)")
 
@@ -521,11 +657,13 @@ class Grid :
         self.spectrum_ax.set_xlabel("Bias (V)")
         self.spectrum_ax.set_ylabel(f"Signal ({self.channel})")
 
-        if self.fig and self.fig.canvas: self.fig.canvas.draw_idle()
+        if self.fig and self.fig.canvas:
+            self.fig.canvas.draw_idle()
 
     def _update_linecut_plot(self):
         """Calculates and displays the linecut data."""
-        if self.linecut_plot is None or self.linecut_ax is None: return
+        if self.linecut_plot is None or self.linecut_ax is None:
+            return
 
         # Get line endpoints in data coordinates
         xydata = self.linecut_line.get_xydata()
@@ -539,7 +677,8 @@ class Grid :
             self.linecut_plot.set_data(dummy_data)
             self.linecut_plot.set_extent((0, 0.1, self.biases.min(), self.biases.max()))
             self.linecut_ax.set_title("Linecut (zero length)")
-            if self.fig and self.fig.canvas: self.fig.canvas.draw_idle()
+            if self.fig and self.fig.canvas:
+                self.fig.canvas.draw_idle()
             return
 
         # Convert data coordinates to pixel indices
@@ -561,10 +700,12 @@ class Grid :
 
         # Extract data along the line using integer indexing (nearest neighbor)
         # Note: scipy.ndimage.map_coordinates could do interpolation if needed
-        data_cut = self.data[self.channel][py_coords.astype(int), px_coords.astype(int), :]
+        data_cut = self.data[self.channel][
+            py_coords.astype(int), px_coords.astype(int), :
+        ]
 
         # Transpose to have distance along x-axis, bias along y-axis for imshow
-        data_cut = data_cut.T # Shape: (num_bias_points, num_pts)
+        data_cut = data_cut.T  # Shape: (num_bias_points, num_pts)
 
         # Determine line length in data units (nm)
         length = np.hypot(x_end - x_start, y_end - y_start)
@@ -578,27 +719,32 @@ class Grid :
             vmin, vmax = np.nanmin(data_cut), np.nanmax(data_cut)
             if vmin < vmax:
                 self.linecut_plot.set_clim(vmin, vmax)
-            else: # Handle case where all values are the same
-                self.linecut_plot.set_clim(vmin - 0.1 * abs(vmin) if vmin != 0 else -0.1,
-                                            vmax + 0.1 * abs(vmax) if vmax != 0 else 0.1)
+            else:  # Handle case where all values are the same
+                self.linecut_plot.set_clim(
+                    vmin - 0.1 * abs(vmin) if vmin != 0 else -0.1,
+                    vmax + 0.1 * abs(vmax) if vmax != 0 else 0.1,
+                )
         else:
             # Handle case with no valid data (e.g., all NaNs)
             self.linecut_plot.set_clim(0, 1)
 
-        self.linecut_ax.set_title("Linecut") # Reset title
+        self.linecut_ax.set_title("Linecut")  # Reset title
         self.linecut_ax.relim()
-        self.linecut_ax.autoscale_view() # Adjust view limits
+        self.linecut_ax.autoscale_view()  # Adjust view limits
 
-        if self.fig and self.fig.canvas: self.fig.canvas.draw_idle()
+        if self.fig and self.fig.canvas:
+            self.fig.canvas.draw_idle()
 
     def _set_mode_visuals(self, new_mode):
         """Updates visibility and clears plots when mode changes."""
         self.mode = new_mode
-        is_point_mode = (self.mode == 'point')
+        is_point_mode = self.mode == "point"
 
         # Update visibility of markers and linecut line
-        if self.selected_markers: self.selected_markers.set_visible(is_point_mode)
-        if self.linecut_line: self.linecut_line.set_visible(not is_point_mode)
+        if self.selected_markers:
+            self.selected_markers.set_visible(is_point_mode)
+        if self.linecut_line:
+            self.linecut_line.set_visible(not is_point_mode)
 
         # Clear the plot associated with the *inactive* mode
         if is_point_mode:
@@ -606,57 +752,73 @@ class Grid :
             if self.linecut_plot:
                 dummy_data = np.full((len(self.biases), 1), np.nan)
                 self.linecut_plot.set_data(dummy_data)
-            if self.linecut_ax: self.linecut_ax.set_title("Linecut Mode (Inactive)")
+            if self.linecut_ax:
+                self.linecut_ax.set_title("Linecut Mode (Inactive)")
         else:
             # Clear spectrum plot
             if self.spectrum_ax:
                 lines = self.spectrum_ax.get_lines()
-                for line in lines: line.remove()
-                legend = self.spectrum_ax.get_legend();
-                if legend: legend.remove()
-                self.spectrum_ax.relim(); self.spectrum_ax.autoscale_view()
+                for line in lines:
+                    line.remove()
+                legend = self.spectrum_ax.get_legend()
+                if legend:
+                    legend.remove()
+                self.spectrum_ax.relim()
+                self.spectrum_ax.autoscale_view()
                 self.spectrum_ax.set_title("Point Mode Spectra (Inactive)")
             # Clear point selection state as well
             self.selected_points.clear()
             if self.selected_markers:
                 self.selected_markers.set_offsets(np.empty((0, 2)))
-                self.selected_markers.set_facecolors('none')
+                self.selected_markers.set_facecolors("none")
 
-
-        self._update_plot_title() # Update main title to reflect mode
+        self._update_plot_title()  # Update main title to reflect mode
         print(f"Switched to {self.mode.capitalize()} mode.")
-        if self.fig and self.fig.canvas: self.fig.canvas.draw_idle()
+        if self.fig and self.fig.canvas:
+            self.fig.canvas.draw_idle()
 
     # --- Event Handlers ---
     def _on_key_press(self, event):
         """Handles key presses for slice changes and mode switching."""
-        if event.canvas.figure != self.fig: return
+        if event.canvas.figure != self.fig:
+            return
 
         # Mode Switch
-        if event.key == 'm':
-            new_mode = 'point' if self.mode == 'linecut' else 'linecut'
+        if event.key == "m":
+            new_mode = "point" if self.mode == "linecut" else "linecut"
             self._set_mode_visuals(new_mode)
-            return # Mode switched, nothing else to do for this key press
+            return  # Mode switched, nothing else to do for this key press
 
         # Slice Change
-        if self.biases is None or len(self.biases) == 0: return
-        if event.key == "down": self.sweep_index -= 1
-        elif event.key == "up": self.sweep_index += 1
-        else: return # Ignore other keys
+        if self.biases is None or len(self.biases) == 0:
+            return
+        if event.key == "down":
+            self.sweep_index -= 1
+        elif event.key == "up":
+            self.sweep_index += 1
+        else:
+            return  # Ignore other keys
 
         self.sweep_index %= len(self.biases)
-        self._update_image_slice() # Update map and FFT
-
+        self._update_image_slice()  # Update map and FFT
 
     def _on_press(self, event):
         """Handles mouse button press for current mode."""
-        if event.canvas.figure != self.fig or event.inaxes != self.plot_ax: return
+        if event.canvas.figure != self.fig or event.inaxes != self.plot_ax:
+            return
         xdata, ydata = event.xdata, event.ydata
-        if xdata is None or ydata is None: return # Click outside axes
+        if xdata is None or ydata is None:
+            return  # Click outside axes
 
-        if self.mode == 'point':
+        if self.mode == "point":
             # --- Point Mode Press Logic ---
-            if self.x_size <= 0 or self.y_size <= 0 or self.x_pixels <= 0 or self.y_pixels <= 0: return
+            if (
+                self.x_size <= 0
+                or self.y_size <= 0
+                or self.x_pixels <= 0
+                or self.y_pixels <= 0
+            ):
+                return
             # Calculate pixel index
             px = int(round(xdata / self.x_size * self.x_pixels - 0.5))
             py = int(round(ydata / self.y_size * self.y_pixels - 0.5))
@@ -664,7 +826,7 @@ class Grid :
             py = max(0, min(py, self.y_pixels - 1))
             point = (px, py)
 
-            is_shift = event.key == 'shift'
+            is_shift = event.key == "shift"
             is_right_click = event.button == 3
 
             if is_right_click:
@@ -678,32 +840,38 @@ class Grid :
                 else:
                     self.selected_points.remove(point)
                     print(f"Removed point: {point}. Total: {len(self.selected_points)}")
-            else: # Left-click without shift
+            else:  # Left-click without shift
                 if len(self.selected_points) != 1 or self.selected_points[0] != point:
                     self.selected_points = [point]
                     print(f"Selected point: {point}")
 
-            self._update_spectrum_plot() # Update spectrum and markers
+            self._update_spectrum_plot()  # Update spectrum and markers
 
-        elif self.mode == 'linecut':
+        elif self.mode == "linecut":
             # --- Linecut Mode Press Logic ---
-            if event.button == 1: # Left-click starts line
+            if event.button == 1:  # Left-click starts line
                 self.click_start_pos = (xdata, ydata)
                 # Set initial line (zero length)
                 self.linecut_line.set_data([xdata, xdata], [ydata, ydata])
-                self._update_linecut_plot() # Update linecut plot (will show zero length message)
-                if self.fig and self.fig.canvas: self.fig.canvas.draw_idle()
-
+                self._update_linecut_plot()  # Update linecut plot (will show zero length message)
+                if self.fig and self.fig.canvas:
+                    self.fig.canvas.draw_idle()
 
     def _on_motion(self, event):
         """Handles mouse motion for current mode (only linecut matters)."""
-        if event.canvas.figure != self.fig or event.inaxes != self.plot_ax: return
+        if event.canvas.figure != self.fig or event.inaxes != self.plot_ax:
+            return
 
-        if self.mode == 'linecut' and event.button == 1 and self.click_start_pos is not None:
+        if (
+            self.mode == "linecut"
+            and event.button == 1
+            and self.click_start_pos is not None
+        ):
             # --- Linecut Mode Motion Logic ---
             x_start, y_start = self.click_start_pos
             x_end, y_end = event.xdata, event.ydata
-            if x_end is None or y_end is None: return # Moved outside axes
+            if x_end is None or y_end is None:
+                return  # Moved outside axes
 
             # Update the visual line overlay
             self.linecut_line.set_data([x_start, x_end], [y_start, y_end])
@@ -712,25 +880,36 @@ class Grid :
             self._update_linecut_plot()
             # No need to redraw here, _update_linecut_plot does it
 
-
     def _on_release(self, event):
         """Handles mouse button release for current mode."""
-        if event.canvas.figure != self.fig: return
+        if event.canvas.figure != self.fig:
+            return
 
-        if self.mode == 'linecut':
+        if self.mode == "linecut":
             # Reset click start position when mouse is released
             self.click_start_pos = None
 
-
     # --- Public Methods for Control (Unchanged) ---
     def clim(self, c_min, c_max):
-        if self.im and self.fig and self.fig.canvas: self.im.set_clim(c_min, c_max); self.fig.canvas.draw_idle()
+        if self.im and self.fig and self.fig.canvas:
+            self.im.set_clim(c_min, c_max)
+            self.fig.canvas.draw_idle()
+
     def colormap(self, cmap):
-        if self.im and self.fig and self.fig.canvas: self.im.set_cmap(cmap); self.fig.canvas.draw_idle()
+        if self.im and self.fig and self.fig.canvas:
+            self.im.set_cmap(cmap)
+            self.fig.canvas.draw_idle()
+
     def fft_clim(self, c_min, c_max):
-        if self.fft_plot and self.fig and self.fig.canvas: self.fft_plot.set_clim(c_min, c_max); self.fig.canvas.draw_idle()
+        if self.fft_plot and self.fig and self.fig.canvas:
+            self.fft_plot.set_clim(c_min, c_max)
+            self.fig.canvas.draw_idle()
+
     def fft_colormap(self, cmap):
-        if self.fft_plot and self.fig and self.fig.canvas: self.fft_plot.set_cmap(cmap); self.fig.canvas.draw_idle()
+        if self.fft_plot and self.fig and self.fig.canvas:
+            self.fft_plot.set_cmap(cmap)
+            self.fig.canvas.draw_idle()
+
     def plot_spectrum(self, i, j, channel="Input 2 (V)", fig=None, ax=None):
         if ax is None:
             fig, ax = plt.subplots()
@@ -878,7 +1057,7 @@ class Grid :
             peak_energies[0, 0] = (peak_energies[1, 0] + peak_energies[0, 1]) / 2
 
         return peak_energies
-    
+
     # TO DO : merge with 'extract_peak_energies'
     # we don't need 'animate' function
 
@@ -887,11 +1066,17 @@ class Grid :
         """Closes the matplotlib figure and disconnects callbacks."""
         if self.fig is not None:
             # Disconnect all callbacks
-            if self._cid_key: self.fig.canvas.mpl_disconnect(self._cid_key)
-            if self._cid_press: self.fig.canvas.mpl_disconnect(self._cid_press)
-            if self._cid_motion: self.fig.canvas.mpl_disconnect(self._cid_motion)
-            if self._cid_release: self.fig.canvas.mpl_disconnect(self._cid_release)
-            self._cid_key = self._cid_press = self._cid_motion = self._cid_release = None
+            if self._cid_key:
+                self.fig.canvas.mpl_disconnect(self._cid_key)
+            if self._cid_press:
+                self.fig.canvas.mpl_disconnect(self._cid_press)
+            if self._cid_motion:
+                self.fig.canvas.mpl_disconnect(self._cid_motion)
+            if self._cid_release:
+                self.fig.canvas.mpl_disconnect(self._cid_release)
+            self._cid_key = self._cid_press = self._cid_motion = self._cid_release = (
+                None
+            )
 
             plt.close(self.fig)
             self.fig = None
@@ -911,12 +1096,8 @@ class Grid :
         copy_text_to_clipboard(return_string)
 
 
-
-
-
-
 # TO DO: Copy data to clipboard
-class older_Grid :
+class older_Grid:
     r"""
     Plots the 2D grid spectroscopy data.
     Press the keyboard arrow keys (UP and DOWN) to change the bias/energy of the image.
@@ -1491,7 +1672,17 @@ class Linecut(interactive_colorplot.Colorplot):
             Plots an image from a .sxm file, and draws a line on the image indicating the location of the .3ds line cut.
     """
 
-    def __init__(self, filename, channel, normalize=False):
+    def __init__(
+        self,
+        filename,
+        channel,
+        normalize=False,
+        calibrate_didv=True,
+        fig=None,
+        ax=None,
+        use_millivolts=True,
+        rasterized=False,
+    ):
 
         interactive_colorplot.Colorplot.__init__(self)
         self.sxm_fig = None
@@ -1518,12 +1709,28 @@ class Linecut(interactive_colorplot.Colorplot):
                 for site in range(self.n_positions)
             ]
         )
+        # Calibrate units to be in siemens
+        if calibrate_didv:
+            # Current of the first point for calibration purposes
+            first_point_current = self.nanonis_3ds.data["Current (A)"][0]
+            current_gradient = np.gradient(np.squeeze(first_point_current), self.bias)
+            calibration_factor = np.linalg.lstsq(
+                self.data[0][:, np.newaxis], current_gradient, rcond=None
+            )[0]
+            self.data *= calibration_factor * 1e9  # Convert to nS
         if normalize == "integral":
             self.data = (self.data.T / np.sum(self.data, axis=-1)).T
         elif normalize == "max":
             self.data = (self.data.T / np.amax(self.data, axis=-1)).T
-        self.fig = plt.figure()
-        self.ax = self.fig.add_subplot(111)
+        if fig is not None:
+            self.fig = fig
+        else:
+            self.fig = plt.figure()
+        if ax is not None:
+            self.ax = ax
+        else:
+            self.ax = self.fig.add_subplot(111)
+
         self.ax.set_xlabel("Distance (nm)")
         self.ax.set_ylabel("Sample bias (V)")
 
@@ -1545,7 +1752,9 @@ class Linecut(interactive_colorplot.Colorplot):
         x = x.T
         y = y.T
         # self.data = self.data.T
-        self.pcolor = self.ax.pcolormesh(x, y, self.data, cmap="RdYlBu_r")
+        self.pcolor = self.ax.pcolormesh(
+            x, y, self.data, cmap="RdYlBu_r", rasterized=rasterized
+        )
         self.fig.colorbar(self.pcolor, ax=self.ax)
 
         self.show_image_set = False
@@ -1708,35 +1917,3 @@ def quick_plot(filename, **kwargs):
         return Grid(loaded_data, channel="Input 2 (V)", **kwargs)
     except KeyError:
         return Grid(loaded_data, channel="Input 2 [AVG] (V)", **kwargs)
-
-
-# TO DO: Test gap map program.
-class GapMap:
-
-    def __init__(self, nanonis_3ds, channel, gap_fit_function):
-
-        self.header = nanonis_3ds.header
-        self.spec_data = nanonis_3ds.data[channel]
-        self.biases = nanonis_3ds.biases
-
-        self.x_pixels = self.header["x_pixels"]
-        self.y_pixels = self.header["y_pixels"]
-
-        self.gap_data = np.empty([self.x_pixels, self.y_pixels])
-        for x_pix in range(self.x_pixels):
-            for y_pix in range(self.y_pixels):
-                gap_value = gap_fit_function(
-                    self.biases, self.spec_data[x_pix, y_pix, :]
-                )
-                self.gap_data[x_pix, y_pix] = gap_value
-
-        self.fig = plt.figure()
-        self.ax = self.fig.add_subplot(111)
-        self.plot = self.ax.imshow(
-            np.flipud(self.gap_data),
-            extent=[0, self.header["x_size (nm)"], 0, self.header["y_size (nm)"]],
-            cmap="inferno_r",
-        )
-        self.ax.set_xlabel("X (nm)")
-        self.ax.set_ylabel("Y (nm)")
-        self.fig.colorbar(self.plot, ax=self.ax)

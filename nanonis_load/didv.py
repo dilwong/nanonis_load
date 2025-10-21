@@ -2653,8 +2653,8 @@ class LineCutGateSweep:
 
     Attributes
     ----------
-    spectra : list[didv.spectrum]
-        List of didv.spectrum objects loaded
+    filenames : list[str]
+        List of filenames to open
     slider_axis : str
         The axis along which the slider will sweep the data.
     num_gates : int
@@ -2677,20 +2677,21 @@ class LineCutGateSweep:
         root_dir: str = "",
         slider_axis: str = "gate",
         normalize=False,
+        calibrate_didv=True,
     ):
         self.spectra = [Spectrum(root_dir + file) for file in filenames]
         self.slider_axis = slider_axis
 
-        xs = np.array([spectrum.header["x (nm)"] for spectrum in self.spectra])
-        ys = np.array([spectrum.header["y (nm)"] for spectrum in self.spectra])
+        self.xs = np.array([spectrum.header["x (nm)"] for spectrum in self.spectra])
+        self.ys = np.array([spectrum.header["y (nm)"] for spectrum in self.spectra])
 
         # Calculate the number of gate voltages
         # The fast sweeping axis is the gate voltage, so we find the index of the first
         # point that changes its x position and add one to get the number of gate voltages
         try:
-            self.num_gates = np.nonzero(xs[:-1] != xs[1:])[0][0] + 1
+            self.num_gates = np.nonzero(self.xs[:-1] != self.xs[1:])[0][0] + 1
         except IndexError:
-            self.num_gates = np.nonzero(ys[:-1] != ys[1:])[0][0] + 1
+            self.num_gates = np.nonzero(self.ys[:-1] != self.ys[1:])[0][0] + 1
 
         self.gates = np.array([spectrum.gate for spectrum in self.spectra]).reshape(
             (-1, self.num_gates)
@@ -2703,6 +2704,10 @@ class LineCutGateSweep:
             [np.array(spectrum.data["Input 2 (V)"]) for spectrum in self.spectra]
         )
         self.data = data.reshape((self.num_pos, self.num_gates, -1))
+
+        if calibrate_didv:
+            calibration_factor = self.spectra[0].get_lockin_calibration_factor()
+            self.data *= calibration_factor * 1e9  # Convert to nS
 
         if normalize == "integral":
             for i in range(self.num_pos):
@@ -2721,7 +2726,7 @@ class LineCutGateSweep:
             self.data = np.flip(self.data, axis=-1)
 
         # Total length of linecut
-        self.distance = np.hypot(xs[-1] - xs[0], ys[-1] - ys[0])
+        self.distance = np.hypot(self.xs[-1] - self.xs[0], self.ys[-1] - self.ys[0])
 
         self.fig, self.ax = plt.subplots()
         self.fig.subplots_adjust(bottom=0.25)
@@ -2814,6 +2819,29 @@ class LineCutGateSweep:
     @property
     def bias(self):
         return self.spectra[0].data["Bias calc (V)"].to_numpy()
+
+    def plot_position_slice(self, index, fig=None, ax=None, rasterized=True):
+        if ax is None:
+            fig, ax = plt.subplots()
+        im = ax.imshow(
+            self.data[index, :, :].T,
+            origin="lower",
+            extent=(
+                np.amin(self.gates),
+                np.amax(self.gates),
+                self.bias_lower,
+                self.bias_upper,
+            ),
+            aspect="auto",
+            vmin=0,
+            vmax=np.amax(self.data[0, :, :]),
+            cmap="RdYlBu_r",
+            rasterized=rasterized,
+        )
+        ax.set_xlabel("Gate voltage (V)")
+        ax.set_ylabel("Sample bias (mV)")
+        colorbar = plt.colorbar(im)
+        return im, fig, ax
 
     def create_movie(
         self,
