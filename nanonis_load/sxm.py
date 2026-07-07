@@ -582,6 +582,24 @@ def scale(data: np.ndarray, multiply_factor: float) -> np.ndarray:
     """
     return data * multiply_factor
 
+def subtract_minimum(data: np.ndarray) -> np.ndarray:
+    """
+    Returns the input but with a the minimum value shifted to zero from the entire array.
+    The input MUST be a 2D array.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        2D numpy array containing data.
+
+    Returns
+    -------
+    output : ndarray
+        The data with minimum subtracted.
+    """
+    return data - np.min(data) 
+
+
 
 def subtract_mean(data: np.ndarray) -> np.ndarray:
     """Returns the input with its mean subtracted from it."""
@@ -935,9 +953,14 @@ class Plot:
         direction: int = 0,
         flatten: bool = False,
         subtract_plane: bool = False,
+        cover: float = 1,
         subtract_line: bool = False,
+        reverse: bool = False,
+        overrange: bool = False,
         cmap=util.get_w_cmap(),
         rasterized=True,
+        cbar : bool = True,
+        axes=None
     ):
 
         self.data = sxm_data
@@ -945,6 +968,7 @@ class Plot:
         image_data = np.copy(sxm_data.data[channel][direction])
         avg_dat = image_data[~np.isnan(image_data)].mean()
         image_data[np.isnan(image_data)] = avg_dat
+        image_data = np.ma.masked_where(image_data == 0.0, image_data)
         if (flatten) and (subtract_plane == False):
             image_data = scipy.signal.detrend(image_data)
 
@@ -958,8 +982,12 @@ class Plot:
         # if direction:
         #     image_data=np.fliplr(image_data)
 
-        self.fig = plt.figure()
-        self.ax = self.fig.add_subplot(111)
+        if axes is not None:
+            self.ax = axes
+            self.fig = self.ax.figure
+        else:
+            self.fig = plt.figure()
+            self.ax = self.fig.add_subplot(111)
         x_range = sxm_data.x_range
         y_range = sxm_data.y_range
         x_pixels = sxm_data.x_pixels
@@ -977,15 +1005,28 @@ class Plot:
             image_data = sxm_data.subtract_plane(channel, direction)
         # shading = 'auto' in the pcolormesh command forces pcolormesh to accept x, y with the same dimensions as image_data.T
 
+        if reverse:
+            cmap = plt.get_cmap(cmap).reversed()
+        else:
+            cmap = plt.get_cmap(cmap)
+        cmap = plt.get_cmap(cmap)
+        cmap.set_bad(color='#dddddd')
+        if overrange == True:
+            cmap.set_over(color='#ff0000')
+            cmap.set_under(color="#0000ff")
+        vmin, vmax = self.central_percentile_limits(image_data, cover=cover)
         self.im_plot = self.ax.imshow(
             image_data,
             origin="lower",
             extent=(0, sxm_data.x_range, 0, sxm_data.y_range),
             cmap=cmap,
             rasterized=rasterized,
+            vmin=vmin,
+            vmax=vmax
         )  # pcolormesh chops off last column and row here
         self.ax.set_aspect("equal")
-        self.fig.colorbar(self.im_plot, ax=self.ax)
+        if cbar:
+            self.cb = self.fig.colorbar(self.im_plot, ax=self.ax)
         self.image_data = image_data
 
     def xlim(self, x_min, x_max):
@@ -1000,7 +1041,57 @@ class Plot:
     def colormap(self, cmap):
         self.im_plot.set_cmap(cmap)
 
-    def add_spectra(self, spectra, labels=None):
+    def central_percentile_limits(self, image_data, cover=1.0, ignore_nan=True, mask=None, eps=1e-15):
+        """
+        Return (vmin, vmax) capturing the central `cover` fraction of values in `a`.
+
+        Parameters
+        ----------
+        a : array-like
+            Image / matrix values.
+        cover : float in (0, 1]
+            Fraction of the histogram to keep. Example: 0.98 keeps the central 98%
+            (clips 1% on each tail). 1.0 means no clipping.
+        ignore_nan : bool
+            If True, ignore NaNs when computing percentiles.
+        mask : array-like of bool, optional
+            If provided, only use values where mask is True.
+        eps : float
+            Tiny expansion added if vmin == vmax to avoid zero range.
+
+        Returns
+        -------
+        (vmin, vmax) : tuple of floats
+        """
+        a = np.asanyarray(image_data)
+
+        if mask is not None:
+            a = a[mask]
+
+        # Flatten and filter finite values
+        a = a.ravel()
+        if ignore_nan:
+            a = a[np.isfinite(a)]
+
+        if a.size == 0:
+            raise ValueError("No finite data to compute percentile limits.")
+
+        low_q = (1 - cover) * 50.0
+        high_q = 100.0 - low_q
+
+        # Percentiles are unitless—works regardless of the data's physical units.
+        pfunc = np.nanpercentile if ignore_nan else np.percentile
+        vmin, vmax = pfunc(a, [low_q, high_q])
+
+        if not np.isfinite(vmin): vmin = np.min(a)
+        if not np.isfinite(vmax): vmax = np.max(a)
+        if vmin == vmax:
+            vmin -= eps
+            vmax += eps
+
+        return float(vmin), float(vmax)
+
+    def add_spectra(self, spectra, labels=None, channel = "Bias calc (V)"):
 
         try:
             from . import didv
@@ -1029,18 +1120,18 @@ class Plot:
             x = spectrum_to_center[0] + self.data.header["x_range (nm)"] * 0.5
             y = spectrum_to_center[1] + self.data.header["y_range (nm)"] * 0.5
             s_plt = self.ax.scatter(x, y, marker="x", color="red", picker=True)
-            lbl_plt = self.ax.text(x, y, label_inst, fontsize=10)
+            lbl_plt = self.ax.text(x, y, label_inst, fontsize=10, color="red")
 
             def picker_factory(spec_obj, scatter_plot):
                 def on_pick(event):
                     if scatter_plot == event.artist:
                         try:
-                            spec_obj.data["Input 2 (V)"]
-                            didv.Plot(spec_obj, channel="Input 2 (V)")
+                            spec_obj.data[channel]
+                            didv.Plot(spec_obj, channel= channel)
                         except KeyError:
                             # err_detect = traceback.format_exc()
                             # print(err_detect)
-                            didv.Plot(spec_obj, channel="Input 2 [AVG] (V)")
+                            didv.Plot(spec_obj, channel= channel)
 
                 return on_pick
 
@@ -1048,9 +1139,14 @@ class Plot:
             self.fig.canvas.mpl_connect("pick_event", pick_caller)
 
     # TO DO: Add window functions.
-    def fft(self, window_function=None):
-        self.fft_fig = plt.figure()
-        self.fft_ax = self.fft_fig.add_subplot(111)
+    def fft(self, window_function=None, level=20, cbar=False, axes=None):
+
+        if axes is not None:
+            self.fft_ax = axes
+            self.fft_fig = self.fft_ax.figure
+        else:
+            self.fft_fig = plt.figure()
+            self.fft_ax = self.fft_fig.add_subplot(111)
 
         def correct_fft2D(
             image_data: np.ndarray, window_function: str = ""
@@ -1063,7 +1159,7 @@ class Plot:
             return np.fft.fftshift(np.fft.fft2(np.fft.fftshift(window * image_data)))
 
         fft_array = np.abs(correct_fft2D(self.image_data, window_function))
-        max_fft = np.max(fft_array[1:-1, 1:-1])
+        max_fft = np.log(1+ np.mean(fft_array)) * level
         fft_x = -np.pi / (
             self.data.header["x_range (nm)"] / self.data.header["x_pixels"]
         )
@@ -1071,9 +1167,10 @@ class Plot:
             self.data.header["y_range (nm)"] / self.data.header["y_pixels"]
         )
         self.fft_plot = self.fft_ax.imshow(
-            fft_array, extent=[fft_x, -fft_x, -fft_y, fft_y], origin="lower"
+            np.log(1+fft_array), extent=[fft_x, -fft_x, -fft_y, fft_y], origin="lower"
         )
-        self.fft_fig.colorbar(self.fft_plot, ax=self.fft_ax)
+        if cbar:
+            self.fft_fig.colorbar(self.fft_plot, ax=self.fft_ax)
         self.fft_clim(0, max_fft)
 
     def fft_clim(self, c_min, c_max):
