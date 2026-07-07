@@ -485,6 +485,9 @@ class Plot:
         waterfall=0.0,
         dark=False,
         multiply=None,
+        offsetY=None,
+        average=None,
+        logabs=False,
         plot_on_previous=False,
         axes=None,
         color=None,
@@ -533,8 +536,14 @@ class Plot:
             if ("Gate (V)" in spectrum_inst.header) and (gate_as_index):
                 spectrum_label = str(spectrum_inst.header["Gate (V)"])
             spec_data = spectrum_inst.data.copy()
+            if average is not None:
+                spec_data[channel] = np.average(np.array([spec_data[channel], spec_data[average]]), axis=0)
             if multiply is not None:
                 spec_data[channel] = multiply * spec_data[channel]
+            if offsetY is not None:
+                spec_data[channel] = offsetY + spec_data[channel]
+            if logabs:
+                spec_data[channel] = abs(spec_data[channel])
             plot_args = dict(
                 x=spec_data.columns[0],
                 y=channel,
